@@ -2,7 +2,7 @@
 
 
 [![Crates.io(latest version)](https://img.shields.io/crates/dv/reduct-cli)](https://crates.io/crates/reduct-cli)
-[![GitHub all releases](https://img.shields.io/github/downloads/reductstore/reduct-cli)/total)](https://github.com/reductstore/reduct-cli)/releases/latest)
+[![GitHub all releases](https://img.shields.io/github/downloads/reductstore/reduct-cli/total)](https://github.com/reductstore/reduct-cli/releases/latest)
 [![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/reductstore/reduct-cli/ci.yml?branch=main)](https://github.com/reductstore/reduct-cli/actions)
 
 
