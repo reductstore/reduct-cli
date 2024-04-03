@@ -57,7 +57,7 @@ Expand-Archive -LiteralPath reductstore.zip -DestinationPath .
 Check with our [demo server](https://play.reduct.store):
 
 ```shell
-reduct-cli alias add -L  https://play.reduct.store -t reduct play
+reduct-cli alias add play -L  https://play.reduct.store -t reductstore
 reduct-cli server status play
 reduct-cli bucket ls --full play
 reduct-cli cp play/datasets .
