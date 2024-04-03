@@ -1,9 +1,12 @@
 [package]
 name = "reduct-cli"
-version = "0.1.0-rc.2"
+version = "0.1.0-rc.3"
 edition = "2021"
 authors = ["Alexey Timin <atimin@reduct.store>"]
 rust-version = "1.75.0"
+license-file = "LICENSE"
+keywords = ["database", "time-series", "blob", "storage", "reductstore"]
+categories = ["command-line-utilities", "database"]
 
 description = "A CLI client for ReductStore written in Rust"
 

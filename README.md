@@ -19,7 +19,38 @@ blob data.
 
 ## Installing
 
-TBD
+### Cargo
+
+```shell
+cargo install reduct-cli
+```
+
+### Binary Linux
+
+```shell
+wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.linux-amd64.tar.gz
+tar -xvf reduct-cli.linux-amd64.tar.gz
+chmod +x reduct-cli
+sudo mv reduct-cli /usr/local/bin
+```
+
+### Binary MacOS
+
+```shell
+wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.macos-amd64.tar.gz
+tar -xvf reduct-cli.macos-amd64.tar.gz
+chmod +x reduct-cli
+sudo mv reduct-cli /usr/local/bin
+```
+
+
+### Binary Windows
+
+```powershell
+Invoke-WebRequest -Uri  https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.win-amd64.zip -OutFile reductstore.zip
+Expand-Archive -LiteralPath reductstore.zip -DestinationPath .
+.\reductstore.exe
+```
 
 ## Usage
 
