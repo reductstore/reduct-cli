@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run ReductStore
-        run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{github.repository}}/${{matrix.reductstore_version}}
+        run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{env.REGISTRY_IMAGE}}:${{matrix.reductstore_version}}
       - name: Run Client CLI tests
         run: RS_API_TOKEN=TOKEN cargo test  -- --test-threads=1
 
