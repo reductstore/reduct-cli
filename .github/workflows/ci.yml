@@ -1,0 +1,207 @@
+name: ci
+on:
+  push:
+    branches: [ main, stable ]
+    tags:
+      - 'v*'
+    paths-ignore:
+      - docs/**
+      - README.md
+      - CHANGELOG.md
+
+  pull_request:
+    branches: [ main, stable ]
+    paths-ignore:
+      - docs/**
+      - README.md
+      - CHANGELOG.md
+
+
+env:
+  REGISTRY_IMAGE: reduct/store
+  MINIMAL_RUST_VERSION: 1.75.0
+
+jobs:
+  rust_fmt:
+    runs-on: ubuntu-latest
+    name: Rust Linter
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check code
+        run: cargo fmt --all -- --check
+
+  build:
+    name: Build binaries
+    needs:
+      - rust_fmt
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+          repo-token: ${{ secrets.ACTION_GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.MINIMAL_RUST_VERSION }}
+
+      - name: Install CMake
+        run: pip install cmake
+
+      - name: Install rustfmt
+        run: rustup component add rustfmt
+
+      - uses: ilammy/setup-nasm@v1
+
+      - name: Build binary
+        run: cargo build --release
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: reduct-cli-${{ matrix.os }}
+          path: target/release/reduct-cli${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+
+
+  cli_tests:
+    name: Client CLI Tests
+    runs-on: ubuntu-latest
+    needs:
+      - rust_fmt
+    strategy:
+      matrix:
+        reductstore_version: [ "latest", "main" ]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: image
+          path: /tmp/
+      - name: Load image
+        run: |
+          docker load --input /tmp/image.tar
+          docker image ls -a
+      - name: Run Database
+        run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{github.repository}}/${{matrix.reductstore_version}}
+      - name: Run Client CLI tests
+        run: RS_API_TOKEN=TOKEN cargo test  -- --test-threads=1
+
+
+  check_tag:
+    runs-on: ubuntu-latest
+    name: Check tag
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cargo install cargo-get
+          if [ "v$(cargo get package.version)" != "${GITHUB_REF#refs/*/}" ]; then
+            echo "Tag does not match version in $PKG_NAME/Cargo.toml"
+            exit 1
+          fi
+
+  publish_crate:
+    runs-on: ubuntu-latest
+    name: Publish crate
+    needs:
+      - cli_tests
+      - check_tag # Only publish on tags
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.MINIMAL_RUST_VERSION }}
+      - uses: arduino/setup-protoc@v1
+        with:
+          version: '3.x'
+          repo-token: ${{ secrets.ACTION_GITHUB_TOKEN }}
+      - name: Login
+        run: |
+          cargo login ${{ secrets.CRATES_IO_TOKEN }}
+      - name: Publish reduct-cli
+        run: cargo publish -p reduct-cli
+
+  make_release:
+    runs-on: ubuntu-latest
+    needs:
+      - cli_tests
+      - check_tag # Only publish on tags
+    name: Make release
+    if: ${{ startsWith(github.event.ref, 'refs/tags/v') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/create-release@v1
+        id: create_release
+        with:
+          draft: true
+          prerelease: false
+          release_name: Release ${{ steps.version.outputs.version }}
+          tag_name: ${{ github.ref }}
+          body: Copy changes from CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reduct-cli-ubuntu-latest
+          path: /tmp/
+      - name: Load Linux image and get binary
+        run: |
+          cd /tmp
+          tar -czvf reduct-cli.linux-amd64.tar.gz reduct-cli
+      - name: Upload Linux artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: /tmp/reduct-cli.linux-amd64.tar.gz
+          asset_name: reduct-cli.linux-amd64.tar.gz
+          asset_content_type: application/gzip
+      - name: Download Macos artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reduct-cli-macos-latest
+          path: /tmp/
+      - name: Archive MacOs binary
+        run: |
+          cd /tmp
+          tar -czvf reduct-cli.macos-amd64.tar.gz  reduct-cli
+      - name: Upload MacOs artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: /tmp/reduct-cli.macos-amd64.tar.gz
+          asset_name: reduct-cli.macos-amd64.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: reduct-cli-windows-latest
+          path: /tmp/
+      - name: Archive Windows binary
+        run: |
+          cd /tmp
+          zip -o reduct-cli.win-amd64.zip  reduct-cli.exe
+      - name: Upload Windows artifact
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: /tmp/reduct-cli.win-amd64.zip
+          asset_name: reduct-cli.win-amd64.zip
+          asset_content_type: application/zip
