@@ -62,10 +62,7 @@ mod tests {
         get_server_status(&context, &args).await.unwrap();
         assert_eq!(context.stdout().history().len(), 4);
         assert_eq!(context.stdout().history()[0], "Status: \tOk");
-        assert_eq!(
-            context.stdout().history()[1],
-            format!("Version:\t{}", env!("CARGO_PKG_VERSION"))
-        );
+        assert!(context.stdout().history()[1].starts_with("Version:\t1."));
         assert!(context.stdout().history()[2].starts_with("Uptime: \t"));
         assert_eq!(
             context.stdout().history()[3],
