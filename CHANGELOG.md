@@ -7,4 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2024-04-03
+
 - Moved from https://github.com/reductstore/reductstore
+
+
+[0.1.0]: https://github.com/reductstore/reduct-cli/releases/tag/v0.1.0
