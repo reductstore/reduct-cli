@@ -39,19 +39,7 @@ impl CopyVisitor for CopyToFolderVisitor {
         let ext = if let Some(ext) = &self.ext {
             ext.clone()
         } else {
-            if let Some((top, sub)) = record.content_type().split_once('/') {
-                if let Some(ext) = get_extensions(top, sub) {
-                    if ext.contains(&sub) {
-                        sub.to_string()
-                    } else {
-                        ext.first().unwrap_or(&"bin").to_string()
-                    }
-                } else {
-                    "bin".to_string()
-                }
-            } else {
-                "bin".to_string()
-            }
+            Self::guess_extension(&record)
         };
 
         let file_path =
@@ -95,6 +83,37 @@ impl CopyVisitor for CopyToFolderVisitor {
         }
 
         Ok(())
+    }
+}
+
+impl CopyToFolderVisitor {
+    fn guess_extension(record: &Record) -> String {
+        if let Some((top, sub)) = record.content_type().split_once('/') {
+            if let Some(ext) = get_extensions(top, sub) {
+                if let Some(well_known) = Self::well_known_ext(top, sub) {
+                    well_known.to_string()
+                } else {
+                    ext.first().unwrap_or(&"bin").to_string()
+                }
+            } else {
+                "bin".to_string()
+            }
+        } else {
+            "bin".to_string()
+        }
+    }
+
+    fn well_known_ext(top : &str, sub : &str) -> Option<&'static str> {
+        match (top, sub) {
+            ("application", "octet-stream") => Some("bin"),
+            ("text", "html") => Some("html"),
+            ("text", "markdown") => Some("md"),
+            ("text", "plain") => Some("txt"),
+            ("image", "jpeg") => Some("jpg"),
+            ("image", "png") => Some("png"),
+
+            _ => None,
+        }
     }
 }
 
@@ -263,6 +282,19 @@ mod tests {
             fs::read_to_string(file_path).await.unwrap(),
             "Hello, World!"
         );
+    }
+
+
+    #[rstest]
+    #[case("application/octet-stream", "bin")]
+    #[case("text/html", "html")]
+    #[case("text/markdown", "md")]
+    #[case("text/plain", "txt")]
+    #[case("image/jpeg", "jpg")]
+    #[case("image/png", "png")]
+    fn test_guess_extension(#[case] content_type: &str, #[case] ext: &str) {
+        let record = RecordBuilder::new().content_type(content_type.to_string()).build();
+        assert_eq!(CopyToFolderVisitor::guess_extension(&record), ext);
     }
 
     #[fixture]

@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Alexey Timin <atimin@reduct.store>"]
 rust-version = "1.75.0"
-license-file = "LICENSE"
+license = "MPL-2"
 keywords = ["database", "time-series", "blob", "storage", "reductstore"]
 categories = ["command-line-utilities", "database"]
 
