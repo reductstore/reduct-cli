@@ -218,20 +218,14 @@ where
 
     let mut tasks = JoinSet::new();
     let progress = MultiProgress::new();
-    let sty = ProgressStyle::with_template(
-        "[{elapsed_precise}] {bar:40.cyan/blue} {percent_precise:6}% {msg}",
-    )
-    .unwrap()
-    .progress_chars("##-");
+
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
 
     let visitor = Arc::new(visitor);
     for entry in entries {
         let query_builder = build_query(&src_bucket, &entry, &query_params);
-        let local_progress = ProgressBar::new(entry.latest_record - entry.oldest_record);
-        let local_progress = progress.add(local_progress);
+        let (start, local_progress) = init_task_progress_bar(&query_params, &progress, &entry);
         let local_sem = Arc::clone(&semaphore);
-        local_progress.set_style(sty.clone());
 
         let local_visitor = Arc::clone(&visitor);
         tasks.spawn(async move {
@@ -245,7 +239,7 @@ where
 
             while let Some(record) = record_stream.next().await {
                 let record = record?;
-                local_progress.set_position(record.timestamp_us() - entry.oldest_record);
+                local_progress.set_position(record.timestamp_us() - start);
 
                 let content_length = record.content_length() as u64;
                 let result = local_visitor.visit(&entry.name, record).await;
@@ -276,6 +270,34 @@ where
     }
 
     Ok(())
+}
+
+fn init_task_progress_bar(
+    query_params: &QueryParams,
+    progress: &MultiProgress,
+    entry: &EntryInfo,
+) -> (u64, ProgressBar) {
+    let start = if let Some(start) = query_params.start {
+        start as u64
+    } else {
+        entry.oldest_record
+    };
+
+    let stop = if let Some(stop) = query_params.stop {
+        stop as u64
+    } else {
+        entry.latest_record
+    };
+
+    let local_progress = ProgressBar::new(stop - start);
+    let local_progress = progress.add(local_progress);
+    let sty = ProgressStyle::with_template(
+        "[{elapsed_precise}] {bar:40.cyan/blue} {percent_precise:6}% {msg}",
+    )
+    .unwrap()
+    .progress_chars("##-");
+    local_progress.set_style(sty.clone());
+    (start, local_progress)
 }
 
 #[cfg(test)]
