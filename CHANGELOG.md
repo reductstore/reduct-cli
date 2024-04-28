@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed:
 
-- Wrong file extension for application/octet-stream content type in `reduct-cli cp` command, [PR-3](https://github.com/reductstore/reduct-cli/pull/4)
+- Wrong file extension for application/octet-stream content type in `reduct-cli cp` command, [PR-4](https://github.com/reductstore/reduct-cli/pull/4)
+
+### Security:
+
+- Bump rustls from 0.21.10 to 0.21.12, [PR-5](https://github.com/reductstore/reduct-cli/pull/5)
 
 ## [0.1.0] - 2024-04-03
 
