@@ -103,7 +103,7 @@ impl CopyToFolderVisitor {
         }
     }
 
-    fn well_known_ext(top : &str, sub : &str) -> Option<&'static str> {
+    fn well_known_ext(top: &str, sub: &str) -> Option<&'static str> {
         match (top, sub) {
             ("application", "octet-stream") => Some("bin"),
             ("text", "html") => Some("html"),
@@ -284,7 +284,6 @@ mod tests {
         );
     }
 
-
     #[rstest]
     #[case("application/octet-stream", "bin")]
     #[case("text/html", "html")]
@@ -293,7 +292,9 @@ mod tests {
     #[case("image/jpeg", "jpg")]
     #[case("image/png", "png")]
     fn test_guess_extension(#[case] content_type: &str, #[case] ext: &str) {
-        let record = RecordBuilder::new().content_type(content_type.to_string()).build();
+        let record = RecordBuilder::new()
+            .content_type(content_type.to_string())
+            .build();
         assert_eq!(CopyToFolderVisitor::guess_extension(&record), ext);
     }
 
