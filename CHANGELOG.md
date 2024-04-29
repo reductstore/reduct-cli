@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+### Added:
+
+- RS-55: `--only-entries` option to delete only entries in `bucket rm` cmd, [PR-8](https://github.com/reductstore/reduct-cli/pull/8)
+
 ### Fixed:
 
 - Wrong file extension for application/octet-stream content type in `reduct-cli cp` command, [PR-4](https://github.com/reductstore/reduct-cli/pull/4)

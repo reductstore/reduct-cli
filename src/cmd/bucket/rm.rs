@@ -26,7 +26,7 @@ pub(super) fn rm_bucket_cmd() -> Command {
                 .long("only-entries")
                 .short('e')
                 .value_name("ENTRY_NAME")
-                .help("Remove only the specified entry instead of the whole bucket")
+                .help("Remove only the specified entry instead of the whole bucket. Wildcards are supported.")
                 .num_args(1..)
                 .required(false),
         )
