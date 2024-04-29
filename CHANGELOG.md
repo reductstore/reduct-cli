@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2024-04-29
 
 ### Added:
 
@@ -26,5 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Moved from https://github.com/reductstore/reductstore
 
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.2.0...HEAD
+
+[0.2.0]: https://github.com/reductstore/reduct-cli/compare/v0.1.0...v0.2.0
 
 [0.1.0]: https://github.com/reductstore/reduct-cli/releases/tag/v0.1.0
