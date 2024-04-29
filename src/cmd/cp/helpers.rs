@@ -6,17 +6,18 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::context::CliContext;
-use crate::parse::widely_used_args::parse_label_args;
 use bytesize::ByteSize;
 use chrono::DateTime;
 use clap::ArgMatches;
 use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reduct_rs::{Bucket, EntryInfo, ErrorCode, Labels, QueryBuilder, Record, ReductError};
-
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
+
+use crate::context::CliContext;
+use crate::parse::fetch_and_filter_entries;
+use crate::parse::widely_used_args::parse_label_args;
 
 pub(super) struct QueryParams {
     start: Option<i64>,
@@ -24,7 +25,7 @@ pub(super) struct QueryParams {
     include_labels: Labels,
     exclude_labels: Labels,
     limit: Option<u64>,
-    entries_filter: Vec<String>,
+    entry_filter: Vec<String>,
     parallel: usize,
     ttl: Duration,
 }
@@ -37,7 +38,7 @@ impl Default for QueryParams {
             include_labels: Labels::new(),
             exclude_labels: Labels::new(),
             limit: None,
-            entries_filter: Vec::new(),
+            entry_filter: Vec::new(),
             parallel: 1,
             ttl: Duration::from_secs(60),
         }
@@ -122,34 +123,10 @@ pub(super) fn parse_query_params(
         include_labels,
         exclude_labels,
         limit,
-        entries_filter,
+        entry_filter: entries_filter,
         parallel: ctx.parallel(),
         ttl: ctx.timeout() * ctx.parallel() as u32,
     })
-}
-
-pub(super) async fn find_entries_to_copy(
-    src_bucket: &Bucket,
-    query_params: &QueryParams,
-) -> anyhow::Result<Vec<EntryInfo>> {
-    let entries_filter = &query_params.entries_filter;
-    let entries = src_bucket
-        .entries()
-        .await?
-        .iter()
-        .filter(|entry| -> bool {
-            if entries_filter.is_empty() || entries_filter.contains(&entry.name) {
-                true
-            } else {
-                // check wildcard
-                entries_filter.iter().any(|filter| {
-                    filter.ends_with('*') && entry.name.starts_with(&filter[..filter.len() - 1])
-                })
-            }
-        })
-        .map(|entry| entry.clone())
-        .collect::<Vec<EntryInfo>>();
-    Ok(entries)
 }
 
 pub(super) fn parse_time(time_str: Option<&String>) -> anyhow::Result<Option<i64>> {
@@ -214,7 +191,7 @@ pub(super) async fn start_loading<V>(
 where
     V: CopyVisitor + Send + Sync + 'static,
 {
-    let entries = find_entries_to_copy(&src_bucket, &query_params).await?;
+    let entries = fetch_and_filter_entries(&src_bucket, &query_params.entry_filter).await?;
 
     let mut tasks = JoinSet::new();
     let progress = MultiProgress::new();
@@ -302,8 +279,9 @@ fn init_task_progress_bar(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use rstest::*;
+
+    use super::*;
 
     mod parse_query_params {
         use crate::cmd::cp::cp_cmd;
@@ -418,21 +396,23 @@ mod tests {
             let query_params = parse_query_params(&context, &args).unwrap();
 
             assert_eq!(
-                query_params.entries_filter,
+                query_params.entry_filter,
                 vec![String::from("entry-1"), String::from("entry-2")]
             );
         }
     }
 
     mod downloading {
-        use super::*;
-        use crate::context::tests::{bucket, context};
-        use crate::context::CliContext;
-        use crate::io::reduct::build_client;
         use async_trait::async_trait;
         use bytes::Bytes;
         use mockall::mock;
         use mockall::predicate::{always, eq};
+
+        use crate::context::tests::{bucket, context};
+        use crate::context::CliContext;
+        use crate::io::reduct::build_client;
+
+        use super::*;
 
         mock! {
             pub Visitor {}
@@ -549,7 +529,7 @@ mod tests {
             visitor.expect_visit().times(2).return_const(Ok(()));
 
             let params = QueryParams {
-                entries_filter: vec!["entry-*".to_string()],
+                entry_filter: vec!["entry-*".to_string()],
                 ..Default::default()
             };
 
@@ -570,7 +550,7 @@ mod tests {
                 .return_const(Ok(()));
 
             let params = QueryParams {
-                entries_filter: vec!["entry-1".to_string()],
+                entry_filter: vec!["entry-1".to_string()],
                 ..Default::default()
             };
 
