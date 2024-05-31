@@ -30,7 +30,7 @@ pub(super) fn ls_bucket_cmd() -> Command {
                 .long("full")
                 .short('f')
                 .action(SetTrue)
-                .help("Show full bucket information")
+                .help("Show detailed bucket information")
                 .required(false),
         )
 }

@@ -29,7 +29,7 @@ pub(super) fn show_bucket_cmd() -> Command {
                 .long("full")
                 .short('f')
                 .action(SetTrue)
-                .help("Show full bucket information with entries")
+                .help("Show detailed bucket information with entries")
                 .required(false),
         )
 }

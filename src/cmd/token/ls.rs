@@ -10,7 +10,7 @@ use crate::io::std::output;
 use clap::{Arg, ArgMatches, Command};
 
 pub(super) fn ls_tokens_cmd() -> Command {
-    Command::new("ls").about("List tokens").arg(
+    Command::new("ls").about("List access tokens").arg(
         Arg::new("ALIAS_OR_URL")
             .help(ALIAS_OR_URL_HELP)
             .required(true),

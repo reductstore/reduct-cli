@@ -18,7 +18,7 @@ use create::{create_replica, create_replica_cmd};
 
 pub(crate) fn replication_cmd() -> Command {
     Command::new("replica")
-        .about("Manage replications in a ReductStore instance")
+        .about("Manage replication tasks")
         .arg_required_else_help(true)
         .subcommand(create_replica_cmd())
         .subcommand(update_replica_cmd())

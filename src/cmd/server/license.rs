@@ -9,7 +9,7 @@ use clap::{Arg, ArgMatches, Command};
 
 pub(super) fn server_license_cmd() -> Command {
     Command::new("license")
-        .about("Get information about the license of a ReductStore instance")
+        .about("Get information about the license")
         .arg(
             Arg::new("ALIAS_OR_URL")
                 .help(ALIAS_OR_URL_HELP)

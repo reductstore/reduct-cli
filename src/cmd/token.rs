@@ -17,7 +17,7 @@ use clap::Command;
 
 pub(crate) fn token_cmd() -> Command {
     Command::new("token")
-        .about("Manage access tokens in a ReductStore instance")
+        .about("Manage access tokens")
         .arg_required_else_help(true)
         .subcommand(create_token_cmd())
         .subcommand(ls_tokens_cmd())

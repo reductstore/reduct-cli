@@ -11,7 +11,7 @@ use clap::{Arg, ArgMatches, Command};
 
 pub(super) fn check_server_cmd() -> Command {
     Command::new("alive")
-        .about("Check if a ReductStore instance is alive")
+        .about("Check if an instance is alive")
         .arg(
             Arg::new("ALIAS_OR_URL")
                 .help(ALIAS_OR_URL_HELP)
