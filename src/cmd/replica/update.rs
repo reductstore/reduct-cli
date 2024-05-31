@@ -16,7 +16,7 @@ use reduct_rs::ReplicationSettings;
 
 pub(super) fn update_replica_cmd() -> Command {
     Command::new("update")
-        .about("Update a replication")
+        .about("Update a replication task")
         .arg(
             Arg::new("REPLICATION_PATH")
                 .help(RESOURCE_PATH_HELP)

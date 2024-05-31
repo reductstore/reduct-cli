@@ -12,7 +12,7 @@ mod rm;
 
 pub(crate) fn alias_cmd() -> Command {
     Command::new("alias")
-        .about("Manage aliases for different ReductStore instances")
+        .about("Manage aliases for instance URLs")
         .arg_required_else_help(true)
         .subcommand(add::add_alias_cmd())
         .subcommand(ls::ls_aliases_cmd())

@@ -13,7 +13,7 @@ use tabled::{settings::Style, Table, Tabled};
 
 pub(super) fn ls_replica_cmd() -> Command {
     Command::new("ls")
-        .about("List replications")
+        .about("List replication tasks")
         .arg(
             Arg::new("ALIAS_OR_URL")
                 .help(ALIAS_OR_URL_HELP)
@@ -24,7 +24,7 @@ pub(super) fn ls_replica_cmd() -> Command {
                 .long("full")
                 .short('f')
                 .action(SetTrue)
-                .help("Show full replication information")
+                .help("Show detailed replication information")
                 .required(false),
         )
 }

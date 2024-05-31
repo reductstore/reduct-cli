@@ -14,7 +14,7 @@ use reduct_rs::Labels;
 
 pub(super) fn create_replica_cmd() -> Command {
     Command::new("create")
-        .about("Create a replication between two buckets")
+        .about("Create a replication task")
         .arg(
             Arg::new("REPLICATION_PATH")
                 .help(RESOURCE_PATH_HELP)

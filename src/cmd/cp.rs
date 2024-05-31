@@ -18,7 +18,7 @@ use clap::{value_parser, Arg, Command};
 
 pub(crate) fn cp_cmd() -> Command {
     Command::new("cp")
-        .about("Copy data between ReductStore instances or between a ReductStore instance and the local filesystem")
+        .about("Copy data between instances or between an instance and the local filesystem")
         .arg_required_else_help(true)
         .arg(
             Arg::new("SOURCE_BUCKET_OR_FOLDER")

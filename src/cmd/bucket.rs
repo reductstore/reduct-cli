@@ -18,7 +18,7 @@ use reduct_rs::{BucketSettings, QuotaType};
 
 pub(crate) fn bucket_cmd() -> Command {
     Command::new("bucket")
-        .about("Manage buckets in a ReductStore instance")
+        .about("Manage buckets")
         .arg_required_else_help(true)
         .subcommand(create::create_bucket_cmd())
         .subcommand(update::update_bucket_cmd())

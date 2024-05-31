@@ -11,7 +11,7 @@ use time_humanize::{Accuracy, HumanTime, Tense};
 
 pub(super) fn server_status_cmd() -> Command {
     Command::new("status")
-        .about("Get the status of a ReductStore instance")
+        .about("Get the status of an instance")
         .arg(
             Arg::new("ALIAS_OR_URL")
                 .help(ALIAS_OR_URL_HELP)

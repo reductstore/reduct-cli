@@ -13,7 +13,7 @@ use clap::{Arg, ArgMatches, Command};
 
 pub(super) fn rm_token_cmd() -> Command {
     Command::new("rm")
-        .about("Remove a new access token")
+        .about("Remove an access token")
         .arg(
             Arg::new("TOKEN_PATH")
                 .help(RESOURCE_PATH_HELP)
