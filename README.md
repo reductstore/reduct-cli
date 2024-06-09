@@ -63,6 +63,9 @@ reduct-cli bucket ls --full play
 reduct-cli cp play/datasets .
 ```
 
+For more examples, see the [Guides](https://reduct.store/docs/guides) section in the ReductStore documentation.
+
+
 ## Links
 
 * [Project Homepage](https://www.reduct.store)
