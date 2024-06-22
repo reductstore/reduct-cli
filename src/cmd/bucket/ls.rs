@@ -124,14 +124,14 @@ mod tests {
         let bucket = client.create_bucket(&bucket.await).send().await.unwrap();
         bucket
             .write_record("test")
-            .data("data".into())
+            .data("data")
             .timestamp_us(0)
             .send()
             .await
             .unwrap();
         bucket
             .write_record("test")
-            .data("data".into())
+            .data("data")
             .timestamp_us(1000)
             .send()
             .await

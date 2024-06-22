@@ -74,6 +74,25 @@ pub(crate) fn cp_cmd() -> Command {
                 .required(false)
                 .action(SetTrue)
         )
+        .arg(
+            Arg::new("each-n")
+                .long("each-n")
+                .short('N')
+                .help("Export every nth record.\nIf not specified, all records will be exported.")
+                .value_name("NUMBER")
+                .value_parser(value_parser!(u64))
+                .required(false)
+        )
+        .arg(
+            Arg::new("each-s")
+                .long("each-s")
+                .short('S')
+                .help("Export a record every n seconds.\nIf not specified, all records will be exported.")
+                .value_name("NUMBER")
+                .value_parser(value_parser!(f64))
+                .required(false)
+
+        )
 }
 
 pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {

@@ -280,6 +280,8 @@ mod tests {
                 dst_token: current_token,
                 include: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
                 exclude: Labels::from_iter(vec![("key2".to_string(), "value2".to_string())]),
+                each_n: None,
+                each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
             }
         }
