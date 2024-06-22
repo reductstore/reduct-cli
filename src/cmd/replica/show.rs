@@ -74,9 +74,16 @@ pub(super) async fn show_replica_handler(
     );
     output!(
         ctx,
-        "Errors (hourly):     {:<20} Exclude:               {:?}\n",
+        "Errors (hourly):     {:<20} Exclude:               {:?}",
         replica.diagnostics.hourly.errored,
         replica.settings.exclude
+    );
+
+    output!(
+        ctx,
+        "                                          Each Nth: {:<5?},        Each Sec: {:<5?}\n",
+        replica.settings.each_n,
+        replica.settings.each_s
     );
 
     let table = Table::new(
@@ -127,13 +134,7 @@ mod tests {
         build_client(&context, "local").await.unwrap();
 
         assert_eq!(show_replica_handler(&context, &args).await.unwrap(), ());
-        assert_eq!(context.stdout().history(), vec!["Name:                test_replica         Source Bucket:         test_bucket",
-                                                    "Active:              false                Destination Bucket:    test_bucket_2",
-                                                    "Provisioned:         false                Destination Server:    http://localhost:8383",
-                                                    "Pending Records:     0                    Entries:               []",
-                                                    "Ok Records (hourly): 0                    Include:               {}",
-                                                    "Errors (hourly):     0                    Exclude:               {}\n",
-                                                    "| Error Code | Count | Last Message |\n|------------|-------|--------------|"]);
+        assert_eq!(context.stdout().history(), vec!["Name:                test_replica         Source Bucket:         test_bucket", "Active:              false                Destination Bucket:    test_bucket_2", "Provisioned:         false                Destination Server:    http://localhost:8383", "Pending Records:     0                    Entries:               []", "Ok Records (hourly): 0                    Include:               {}", "Errors (hourly):     0                    Exclude:               {}", "                                          Each Nth: None,        Each Sec: None\n", "| Error Code | Count | Last Message |\n|------------|-------|--------------|"]);
     }
 
     #[rstest]

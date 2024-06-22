@@ -11,7 +11,9 @@ use crate::cmd::cp::b2b::cp_bucket_to_bucket;
 use crate::cmd::cp::b2f::cp_bucket_to_folder;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
-use crate::parse::widely_used_args::{make_entries_arg, make_exclude_arg, make_include_arg};
+use crate::parse::widely_used_args::{
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+};
 use crate::parse::ResourcePathParser;
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg, Command};
@@ -49,6 +51,8 @@ pub(crate) fn cp_cmd() -> Command {
         .arg(make_include_arg())
         .arg(make_exclude_arg())
         .arg(make_entries_arg())
+        .arg(make_each_n())
+        .arg(make_each_s())
         .arg(
             Arg::new("limit")
                 .long("limit")
@@ -73,25 +77,6 @@ pub(crate) fn cp_cmd() -> Command {
                 .help("Export the metadata of the records along with the records in JSON format.\nIf not specified, only the records will be exported.")
                 .required(false)
                 .action(SetTrue)
-        )
-        .arg(
-            Arg::new("each-n")
-                .long("each-n")
-                .short('N')
-                .help("Export every nth record.\nIf not specified, all records will be exported.")
-                .value_name("NUMBER")
-                .value_parser(value_parser!(u64))
-                .required(false)
-        )
-        .arg(
-            Arg::new("each-s")
-                .long("each-s")
-                .short('S')
-                .help("Export a record every n seconds.\nIf not specified, all records will be exported.")
-                .value_name("NUMBER")
-                .value_parser(value_parser!(f64))
-                .required(false)
-
         )
 }
 

@@ -6,7 +6,8 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_entries_arg, make_exclude_arg, make_include_arg, parse_label_args,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    parse_label_args,
 };
 use crate::parse::ResourcePathParser;
 use clap::{Arg, Command};
@@ -36,6 +37,8 @@ pub(super) fn create_replica_cmd() -> Command {
         .arg(make_include_arg())
         .arg(make_exclude_arg())
         .arg(make_entries_arg())
+        .arg(make_each_n())
+        .arg(make_each_s())
 }
 
 pub(super) async fn create_replica(
@@ -57,11 +60,12 @@ pub(super) async fn create_replica(
 
     let include = parse_label_args(args.get_many::<String>("include"))?.unwrap_or_default();
     let exclude = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
-
+    let each_n = args.get_one::<u64>("each-n");
+    let each_s = args.get_one::<f64>("each-s");
     let client = build_client(ctx, &alias_or_url).await?;
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
 
-    client
+    let mut builder = client
         .create_replication(replication_name)
         .src_bucket(source_bucket_name)
         .dst_bucket(dest_bucket_name)
@@ -69,9 +73,17 @@ pub(super) async fn create_replica(
         .dst_token(&token)
         .include(Labels::from_iter(include))
         .exclude(Labels::from_iter(exclude))
-        .entries(entries_filter)
-        .send()
-        .await?;
+        .entries(entries_filter);
+
+    if let Some(n) = each_n {
+        builder = builder.each_n(*n);
+    }
+
+    if let Some(s) = each_s {
+        builder = builder.each_s(*s);
+    }
+
+    builder.send().await?;
     Ok(())
 }
 
@@ -109,6 +121,10 @@ mod tests {
             "--entries",
             "entry1",
             "entry2",
+            "--each-n",
+            "10",
+            "--each-s",
+            "0.5",
         ]);
         create_replica(&context, &args).await.unwrap();
 
@@ -129,6 +145,8 @@ mod tests {
             replica.settings.entries,
             vec!["entry1".to_string(), "entry2".to_string()]
         );
+        assert_eq!(replica.settings.each_n, Some(10));
+        assert_eq!(replica.settings.each_s, Some(0.5));
     }
 
     #[rstest]
