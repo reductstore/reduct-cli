@@ -7,7 +7,8 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_entries_arg, make_exclude_arg, make_include_arg, parse_label_args,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    parse_label_args,
 };
 use crate::parse::ResourcePathParser;
 
@@ -40,6 +41,8 @@ pub(super) fn update_replica_cmd() -> Command {
         .arg(make_include_arg())
         .arg(make_exclude_arg())
         .arg(make_entries_arg())
+        .arg(make_each_n())
+        .arg(make_each_s())
 }
 
 pub(super) async fn update_replica_handler(
@@ -78,6 +81,8 @@ fn update_replication_settings(
 
     let include = parse_label_args(args.get_many::<String>("include"))?;
     let exclude = parse_label_args(args.get_many::<String>("exclude"))?;
+    let each_n = args.get_one::<u64>("each-n");
+    let each_s = args.get_one::<f64>("each-s");
 
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
     current_settings.dst_bucket = dest_bucket_name.clone();
@@ -99,6 +104,15 @@ fn update_replication_settings(
     if let Some(entries_filter) = entries_filter {
         current_settings.entries = entries_filter;
     }
+
+    if let Some(each_n) = each_n {
+        current_settings.each_n = Some(*each_n);
+    }
+
+    if let Some(each_s) = each_s {
+        current_settings.each_s = Some(*each_s);
+    }
+
     Ok(current_settings)
 }
 
@@ -133,6 +147,10 @@ mod tests {
                 format!("local/{}", &bucket2).as_str(),
                 "--include",
                 "key1=value2",
+                "--each-n",
+                "10",
+                "--each-s",
+                "0.5",
             ])
             .unwrap();
 
@@ -149,6 +167,8 @@ mod tests {
         );
         assert!(replica.settings.exclude.is_empty());
         assert!(replica.settings.entries.is_empty());
+        assert_eq!(replica.settings.each_n, Some(10));
+        assert_eq!(replica.settings.each_s, Some(0.5));
     }
 
     mod update_settings {
@@ -280,6 +300,8 @@ mod tests {
                 dst_token: current_token,
                 include: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
                 exclude: Labels::from_iter(vec![("key2".to_string(), "value2".to_string())]),
+                each_n: None,
+                each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
             }
         }

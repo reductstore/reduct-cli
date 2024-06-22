@@ -24,6 +24,8 @@ pub(super) struct QueryParams {
     stop: Option<i64>,
     include_labels: Labels,
     exclude_labels: Labels,
+    each_n: Option<u64>,
+    each_s: Option<f64>,
     limit: Option<u64>,
     entry_filter: Vec<String>,
     parallel: usize,
@@ -37,6 +39,8 @@ impl Default for QueryParams {
             stop: None,
             include_labels: Labels::new(),
             exclude_labels: Labels::new(),
+            each_n: None,
+            each_s: None,
             limit: None,
             entry_filter: Vec::new(),
             parallel: 1,
@@ -106,9 +110,9 @@ pub(super) fn parse_query_params(
     let start = parse_time(args.get_one::<String>("start"))?;
     let stop = parse_time(args.get_one::<String>("stop"))?;
     let include_labels = parse_label_args(args.get_many::<String>("include"))?.unwrap_or_default();
-
     let exclude_labels = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
-
+    let each_n = args.get_one::<u64>("each-n").map(|n| *n);
+    let each_s = args.get_one::<f64>("each-s").map(|s| *s);
     let limit = args.get_one::<u64>("limit").map(|limit| *limit);
 
     let entries_filter = args
@@ -122,6 +126,8 @@ pub(super) fn parse_query_params(
         stop,
         include_labels,
         exclude_labels,
+        each_n,
+        each_s,
         limit,
         entry_filter: entries_filter,
         parallel: ctx.parallel(),
@@ -155,8 +161,17 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
     if let Some(start) = query_params.start {
         query_builder = query_builder.start_us(start as u64);
     }
+
     if let Some(stop) = query_params.stop {
         query_builder = query_builder.stop_us(stop as u64);
+    }
+
+    if let Some(each_n) = query_params.each_n {
+        query_builder = query_builder.each_n(each_n);
+    }
+
+    if let Some(each_s) = query_params.each_s {
+        query_builder = query_builder.each_s(each_s);
     }
 
     query_builder = query_builder.include(query_params.include_labels.clone());
@@ -369,6 +384,26 @@ mod tests {
                     ("key4".to_string(), "value4".to_string()),
                 ])
             );
+        }
+
+        #[rstest]
+        fn parse_each_n(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-n", "10"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.each_n, Some(10));
+        }
+
+        #[rstest]
+        fn parse_each_s(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-s", "10"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.each_s, Some(10.0));
         }
 
         #[rstest]

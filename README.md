@@ -11,7 +11,7 @@ blob data.
 
 ## Features
 
-* Support for ReductStore API v1.9
+* Support for ReductStore API v1.10
 * Easy management of buckets, tokens and replications
 * Ability to check the status of a storage engine
 * Aliases for storing server credentials
@@ -60,7 +60,7 @@ Check with our [demo server](https://play.reduct.store):
 reduct-cli alias add play -L  https://play.reduct.store -t reductstore
 reduct-cli server status play
 reduct-cli bucket ls --full play
-reduct-cli cp play/datasets .
+reduct-cli cp play/datasets ./datasets --limit 100
 ```
 
 For more examples, see the [Guides](https://reduct.store/docs/guides) section in the ReductStore documentation.

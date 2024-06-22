@@ -11,7 +11,9 @@ use crate::cmd::cp::b2b::cp_bucket_to_bucket;
 use crate::cmd::cp::b2f::cp_bucket_to_folder;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
-use crate::parse::widely_used_args::{make_entries_arg, make_exclude_arg, make_include_arg};
+use crate::parse::widely_used_args::{
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+};
 use crate::parse::ResourcePathParser;
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg, Command};
@@ -49,6 +51,8 @@ pub(crate) fn cp_cmd() -> Command {
         .arg(make_include_arg())
         .arg(make_exclude_arg())
         .arg(make_entries_arg())
+        .arg(make_each_n())
+        .arg(make_each_s())
         .arg(
             Arg::new("limit")
                 .long("limit")
