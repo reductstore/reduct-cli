@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0]
+
 ### Added:
 
 - RS-318: Downsampling options for `reduct-cli cp` and `reduct-cli replica` commands, [PR-10](https://github.com/reductstore/reduct-cli/pull/10)
@@ -35,7 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Moved from https://github.com/reductstore/reductstore
 
-[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.2.0...HEAD
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.3.0...HEAD
+
+[0.3.0]: https://github.com/reductstore/reduct-cli/compare/v0.2.0...v0.3.0
 
 [0.2.0]: https://github.com/reductstore/reduct-cli/compare/v0.1.0...v0.2.0
 
