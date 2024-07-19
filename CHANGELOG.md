@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed:
+
+- Print all errors in progress of reduct-cli cp command, [PR-12](https://github.com/reductstore/reduct-cli/pull/12)
+
 ## [0.3.0]
 
 ### Added:

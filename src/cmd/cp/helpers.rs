@@ -219,6 +219,14 @@ where
         let (start, local_progress) = init_task_progress_bar(&query_params, &progress, &entry);
         let local_sem = Arc::clone(&semaphore);
 
+        macro_rules! print_error_progress {
+            ($err:expr) => {{
+                local_progress.set_message($err.to_string());
+                local_progress.abandon();
+                return Err($err);
+            }};
+        }
+
         let local_visitor = Arc::clone(&visitor);
         tasks.spawn(async move {
             let mut transfer_progress = TransferProgress::new(entry.clone());
@@ -226,11 +234,21 @@ where
 
             let _permit = local_sem.acquire().await.unwrap();
 
-            let record_stream = query_builder.send().await?;
+            let record_stream = match query_builder.send().await {
+                Ok(stream) => stream,
+                Err(err) => {
+                    return print_error_progress!(err);
+                }
+            };
+
             tokio::pin!(record_stream);
 
             while let Some(record) = record_stream.next().await {
-                let record = record?;
+                if let Err(err) = record {
+                    return print_error_progress!(err);
+                }
+
+                let record = record.unwrap();
                 local_progress.set_position(record.timestamp_us() - start);
 
                 let content_length = record.content_length() as u64;
@@ -239,9 +257,7 @@ where
                 if let Err(err) = result {
                     // ignore conflict errors
                     if err.status() != ErrorCode::Conflict {
-                        local_progress.set_message(err.to_string());
-                        local_progress.abandon();
-                        return Err(err);
+                        return print_error_progress!(err);
                     }
                 }
 
