@@ -7,7 +7,7 @@ use crate::config::find_alias;
 use crate::context::CliContext;
 use anyhow::anyhow;
 use colored::Colorize;
-use reduct_rs::ReductClient;
+use reduct_rs::{ErrorCode, ReductClient, ReductError};
 use url::Url;
 
 /// Build a ReductStore client from an alias or URL
@@ -24,11 +24,37 @@ pub(crate) async fn build_client(
         .url(url.as_str())
         .api_token(token.as_str())
         .verify_ssl(!ctx.ignore_ssl())
-        .http1_only() // can't use http2 to stream data between two servers
         .timeout(ctx.timeout())
         .try_build()?;
 
-    let status = client.server_info().await?;
+    let status = match client.server_info().await {
+        Ok(status) => status,
+        Err(ReductError {
+            status: ErrorCode::ConnectionError,
+            message,
+        }) => {
+            if url.scheme() == "https" {
+                // We can't connect to the server, so we try again with SSL verification disabled
+                // to see if that's the issue
+                let test_ssl_client = ReductClient::builder()
+                    .url(url.as_str())
+                    .verify_ssl(false) // Disable SSL verification
+                    .timeout(ctx.timeout())
+                    .try_build()?;
+
+                if test_ssl_client.alive().await.is_ok() {
+                    return Err(ReductError::new(
+                        ErrorCode::ConnectionError,
+                        &format!("Failed to connect to {} with SSL verification enabled. Try again with --ignore-ssl", url.as_str()),
+                    ).into());
+                }
+            }
+
+            return Err(ReductError::new(ErrorCode::ConnectionError, &message).into());
+        }
+        Err(err) => return Err(err.into()),
+    };
+
     if let Some(license) = status.license {
         if license.expiry_date < chrono::Utc::now() {
             eprintln!(

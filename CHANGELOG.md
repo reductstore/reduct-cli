@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed:
+
+- RS-357: Print an error message if SSL certificate is invalid, [PR-13](https://github.com/reductstore/reduct-cli/pull/19)
+
 ## [0.3.1] - 2024-07-19
 
 ### Fixed:
