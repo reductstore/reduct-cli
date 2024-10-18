@@ -30,7 +30,7 @@ dialoguer = "0.11.0"
 futures-util = { version = "0.3.30", features = [] }
 indicatif = "0.17.8"
 async-trait = "0.1.78"
-bytes = "1.5.0"
+bytes = "1.7.2"
 mime_guess = "2.0.4"
 serde_json = "1.0.114"
 tabled = "0.15.0"
