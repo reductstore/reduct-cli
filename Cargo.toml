@@ -27,7 +27,7 @@ thread-id = "4.2.1"
 colored = "2.1.0"
 chrono = "0.4.34"
 dialoguer = "0.11.0"
-futures-util = { version = "0.3.30", features = [] }
+futures-util = { version = "0.3.31", features = [] }
 indicatif = "0.17.8"
 async-trait = "0.1.78"
 bytes = "1.5.0"
