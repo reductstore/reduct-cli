@@ -13,7 +13,7 @@ documentation = "https://reduct.store/docs/guides"
 description = "A CLI client for ReductStore written in Rust"
 
 [dependencies]
-reduct-rs = "1.10.1"
+reduct-rs = "1.12.0"
 clap = { version = "4.5.1", features = ["cargo"] }
 dirs = "5.0.1"
 toml = "0.8.10"
@@ -33,9 +33,9 @@ async-trait = "0.1.78"
 bytes = "1.5.0"
 mime_guess = "2.0.4"
 serde_json = "1.0.114"
-tabled = "0.15.0"
+tabled = "0.16.0"
 
 [dev-dependencies]
-rstest = "0.18.2"
+rstest = "0.23.0"
 tempfile = "3.10.0"
-mockall = "0.12.1"
+mockall = "0.13.0"
