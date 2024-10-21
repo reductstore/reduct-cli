@@ -1,9 +1,10 @@
-// Copyright 2023 ReductStore
+// Copyright 2023-2024 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 mod create;
 mod ls;
+mod rename;
 mod rm;
 mod show;
 mod update;
@@ -20,11 +21,12 @@ pub(crate) fn bucket_cmd() -> Command {
     Command::new("bucket")
         .about("Manage buckets")
         .arg_required_else_help(true)
-        .subcommand(create::create_bucket_cmd())
-        .subcommand(update::update_bucket_cmd())
-        .subcommand(rm::rm_bucket_cmd())
         .subcommand(ls::ls_bucket_cmd())
         .subcommand(show::show_bucket_cmd())
+        .subcommand(create::create_bucket_cmd())
+        .subcommand(update::update_bucket_cmd())
+        .subcommand(rename::rename_bucket_cmd())
+        .subcommand(rm::rm_bucket_cmd())
 }
 
 pub(crate) async fn bucket_handler(
@@ -37,6 +39,7 @@ pub(crate) async fn bucket_handler(
         Some(("rm", args)) => rm::rm_bucket(ctx, args).await?,
         Some(("ls", args)) => ls::ls_bucket(ctx, args).await?,
         Some(("show", args)) => show::show_bucket(ctx, args).await?,
+        Some(("rename", args)) => rename::rename_bucket(ctx, args).await?,
         _ => (),
     }
 
