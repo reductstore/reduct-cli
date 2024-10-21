@@ -111,7 +111,7 @@ impl TransferProgress {
     }
 
     pub(crate) fn print_error(&self, err: String) {
-        self.progress_bar.set_message(format!("Error: {}", err));
+        self.progress_bar.set_message(format!("{}", err));
         self.progress_bar.abandon();
     }
 
@@ -260,7 +260,7 @@ where
             macro_rules! print_error_progress {
                 ($err:expr) => {{
                     transfer_progress.print_error($err.to_string());
-                    return Err($err);
+                    Err($err)
                 }};
             }
             let _permit = local_sem.acquire().await.unwrap();
