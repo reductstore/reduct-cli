@@ -1,9 +1,3 @@
-// Copyright 2024 ReductStore
-// This Source Code Form is subject to the terms of the Mozilla Public
-//    License, v. 2.0. If a copy of the MPL was not distributed with this
-//    file, You can obtain one at https://mozilla.org/MPL/2.0/.
-use crate::cmd::bucket::{create_update_bucket_args, parse_bucket_settings};
-
 use crate::context::CliContext;
 
 use crate::io::reduct::build_client;
@@ -12,7 +6,7 @@ use clap::{Arg, ArgMatches, Command};
 use reduct_rs::ReductClient;
 
 pub(super) fn rename_bucket_cmd() -> Command {
-    let cmd = Command::new("rename").about("Rename a bucket");
+    let cmd = Command::new("rename").about("Rename a bucket or an entry");
     cmd.arg(
         Arg::new("BUCKET_PATH")
             .help(crate::cmd::RESOURCE_PATH_HELP)
@@ -21,23 +15,39 @@ pub(super) fn rename_bucket_cmd() -> Command {
     )
     .arg(
         Arg::new("NEW_NAME")
-            .help("New name for the bucket")
+            .help("New name for the bucket or entry")
             .required(true),
+    )
+    .arg(
+        Arg::new("only-entry")
+            .long("only-entry")
+            .short('e')
+            .value_name("ENTRY_NAME")
+            .help("Rename an entry instead of a bucket")
+            .required(false),
     )
 }
 
 pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     let (alias_or_url, bucket_name) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
     let new_name = args.get_one::<String>("NEW_NAME").unwrap();
+    let entry_name = args.get_one::<String>("only-entry");
 
     let client: ReductClient = build_client(ctx, alias_or_url).await?;
-    client
-        .get_bucket(bucket_name)
-        .await?
-        .rename(new_name)
-        .await?;
+    if let Some(entry_name) = entry_name {
+        let bucket = client.get_bucket(bucket_name).await?;
+        bucket.rename_entry(entry_name, new_name).await?;
+        output!(ctx, "Entry '{}' renamed to '{}'", entry_name, new_name);
+    } else {
+        client
+            .get_bucket(bucket_name)
+            .await?
+            .rename(new_name)
+            .await?;
 
-    output!(ctx, "Bucket '{}' renamed to '{}'", bucket_name, new_name);
+        output!(ctx, "Bucket '{}' renamed to '{}'", bucket_name, new_name);
+    }
+
     Ok(())
 }
 
@@ -45,7 +55,6 @@ pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
 mod tests {
     use super::*;
     use crate::context::tests::{bucket, context};
-    use reduct_rs::QuotaType;
     use rstest::*;
 
     #[rstest]
@@ -79,6 +88,66 @@ mod tests {
                 .stdout()
                 .history()
                 .contains(&"Bucket 'test_bucket' renamed to 'new_bucket'".to_string()),
+            "Output contains message"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rename_entry(context: CliContext, #[future] bucket: String) {
+        let bucket_name = bucket.await;
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket_name).send().await.unwrap();
+
+        client
+            .get_bucket(&bucket_name)
+            .await
+            .unwrap()
+            .write_record("test")
+            .timestamp_us(0)
+            .data("test")
+            .send()
+            .await
+            .unwrap();
+
+        let args = rename_bucket_cmd().get_matches_from(vec![
+            "rename",
+            format!("local/{}", bucket_name).as_str(),
+            "--only-entry",
+            "test",
+            "new_test",
+        ]);
+
+        assert_eq!(
+            rename_bucket(&context, &args).await.unwrap(),
+            (),
+            "Rename entry succeeded"
+        );
+
+        let bucket = client.get_bucket(&bucket_name).await.unwrap();
+        assert!(
+            bucket
+                .read_record("new_test")
+                .timestamp_us(0)
+                .send()
+                .await
+                .is_ok(),
+            "Entry exists with new name"
+        );
+        assert!(
+            bucket
+                .read_record("test")
+                .timestamp_us(0)
+                .send()
+                .await
+                .is_err(),
+            "Old entry does not exist"
+        );
+        assert!(
+            context
+                .stdout()
+                .history()
+                .contains(&"Entry 'test' renamed to 'new_test'".to_string()),
             "Output contains message"
         );
     }
