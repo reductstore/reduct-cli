@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added:
+
+- RS-507: `bucket rename` command, [PR-21](https://github.com/reductstore/reduct-cli/pull/21)
+
 ### Fixed:
 
 - RS-357: Print an error message if SSL certificate is invalid, [PR-19](https://github.com/reductstore/reduct-cli/pull/19)
