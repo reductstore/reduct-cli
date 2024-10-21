@@ -52,25 +52,41 @@ impl Default for QueryParams {
 pub(super) struct TransferProgress {
     entry: EntryInfo,
     transferred_bytes: u64,
+    record_count: u64,
     speed: u64,
     history: Vec<(u64, Instant)>,
     speed_update: Instant,
+    progress_bar: ProgressBar,
+    start: Option<u64>,
 }
 
 impl TransferProgress {
-    pub(super) fn new(entry: EntryInfo) -> Self {
-        Self {
+    pub(super) fn new(
+        entry: EntryInfo,
+        query_params: &QueryParams,
+        progress: &MultiProgress,
+    ) -> Self {
+        let (start, progress_bar) = init_task_progress_bar(query_params, progress, &entry);
+
+        let me = Self {
             entry,
             transferred_bytes: 0,
+            record_count: 0,
             speed: 0,
             history: Vec::new(),
             speed_update: Instant::now(),
-        }
+            progress_bar,
+            start,
+        };
+
+        me.progress_bar.set_message(me.message());
+        me
     }
 
-    pub(super) fn update(&mut self, bytes: u64) {
-        self.transferred_bytes += bytes;
-        self.history.push((bytes, Instant::now()));
+    pub(super) fn update(&mut self, time: u64, content_length: u64) {
+        self.transferred_bytes += content_length;
+        self.record_count += 1;
+        self.history.push((content_length, Instant::now()));
 
         let duration = self.history[0].1.elapsed().as_secs();
         self.speed =
@@ -83,22 +99,42 @@ impl TransferProgress {
             } else {
                 self.speed
             };
+
+        if let Some(start) = self.start {
+            self.progress_bar.set_position(time - start);
+        } else {
+            //  query with limit
+            self.progress_bar.set_position(self.record_count);
+        }
+
+        self.progress_bar.set_message(self.message());
     }
 
-    pub(crate) fn message(&self) -> String {
-        format!(
-            "Copying {} ({}, {}/s)",
+    pub(crate) fn print_error(&self, err: String) {
+        self.progress_bar.set_message(format!("Error: {}", err));
+        self.progress_bar.abandon();
+    }
+
+    pub(crate) fn done(&self) {
+        let msg = format!(
+            "Copied {} records from '{}' ({}, {}/s)",
+            self.record_count,
             self.entry.name,
             ByteSize::b(self.transferred_bytes),
             ByteSize::b(self.speed)
-        )
+        );
+
+        self.progress_bar.set_message(msg);
+        self.progress_bar.abandon();
     }
 
-    pub(crate) fn done(&self) -> String {
+    fn message(&self) -> String {
         format!(
-            "Copied {} ({})",
+            "Copying {} records from '{}' ({}, {}/s)",
+            self.record_count,
             self.entry.name,
-            ByteSize::b(self.transferred_bytes)
+            ByteSize::b(self.transferred_bytes),
+            ByteSize::b(self.speed)
         )
     }
 }
@@ -216,22 +252,17 @@ where
     let visitor = Arc::new(visitor);
     for entry in entries {
         let query_builder = build_query(&src_bucket, &entry, &query_params);
-        let (start, local_progress) = init_task_progress_bar(&query_params, &progress, &entry);
         let local_sem = Arc::clone(&semaphore);
-
-        macro_rules! print_error_progress {
-            ($err:expr) => {{
-                local_progress.set_message($err.to_string());
-                local_progress.abandon();
-                return Err($err);
-            }};
-        }
+        let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
 
         let local_visitor = Arc::clone(&visitor);
         tasks.spawn(async move {
-            let mut transfer_progress = TransferProgress::new(entry.clone());
-            local_progress.set_message(transfer_progress.message());
-
+            macro_rules! print_error_progress {
+                ($err:expr) => {{
+                    transfer_progress.print_error($err.to_string());
+                    return Err($err);
+                }};
+            }
             let _permit = local_sem.acquire().await.unwrap();
 
             let record_stream = match query_builder.send().await {
@@ -248,8 +279,8 @@ where
                     return print_error_progress!(err);
                 }
 
-                let record = record.unwrap();
-                local_progress.set_position(record.timestamp_us() - start);
+                let record = record?;
+                let timestamp = record.timestamp_us();
 
                 let content_length = record.content_length() as u64;
                 let result = local_visitor.visit(&entry.name, record).await;
@@ -261,14 +292,13 @@ where
                     }
                 }
 
-                transfer_progress.update(content_length);
-                local_progress.set_message(transfer_progress.message());
+                transfer_progress.update(timestamp, content_length);
 
                 sleep(Duration::from_micros(5)).await;
             }
 
-            local_progress.set_message(transfer_progress.done());
-            local_progress.abandon();
+            transfer_progress.done();
+
             Ok(())
         });
     }
@@ -284,28 +314,41 @@ fn init_task_progress_bar(
     query_params: &QueryParams,
     progress: &MultiProgress,
     entry: &EntryInfo,
-) -> (u64, ProgressBar) {
-    let start = if let Some(start) = query_params.start {
-        start as u64
-    } else {
-        entry.oldest_record
-    };
-
-    let stop = if let Some(stop) = query_params.stop {
-        stop as u64
-    } else {
-        entry.latest_record
-    };
-
-    let local_progress = ProgressBar::new(stop - start);
-    let local_progress = progress.add(local_progress);
+) -> (Option<u64>, ProgressBar) {
+    let limit = query_params.limit;
     let sty = ProgressStyle::with_template(
-        "[{elapsed_precise}] {bar:40.cyan/blue} {percent_precise:6}% {msg}",
+        "[{elapsed_precise}, ETA {eta_precise}] {bar:40.cyan/blue} {percent_precise:6}% {msg}",
     )
     .unwrap()
     .progress_chars("##-");
-    local_progress.set_style(sty.clone());
-    (start, local_progress)
+
+    if let Some(limit) = limit {
+        // progress for limited copying
+        let local_progress = ProgressBar::new(limit);
+        local_progress.set_style(sty.clone());
+
+        (None, progress.add(local_progress))
+    } else {
+        // progress for full copying based on time range
+        // we don't know the total number of records, so we use the time range
+        let start = if let Some(start) = query_params.start {
+            start as u64
+        } else {
+            entry.oldest_record
+        };
+
+        let stop = if let Some(stop) = query_params.stop {
+            stop as u64
+        } else {
+            entry.latest_record
+        };
+
+        let local_progress = ProgressBar::new(stop - start);
+        let local_progress = progress.add(local_progress);
+        local_progress.set_style(sty.clone());
+
+        (Some(start), local_progress)
+    }
 }
 
 #[cfg(test)]
