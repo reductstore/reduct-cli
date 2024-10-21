@@ -111,7 +111,7 @@ impl TransferProgress {
     }
 
     pub(crate) fn print_error(&self, err: String) {
-        self.progress_bar.set_message(format!("Error: {}", err));
+        self.progress_bar.set_message(format!("{}", err));
         self.progress_bar.abandon();
     }
 
