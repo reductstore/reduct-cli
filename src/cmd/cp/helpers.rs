@@ -260,7 +260,7 @@ where
             macro_rules! print_error_progress {
                 ($err:expr) => {{
                     transfer_progress.print_error($err.to_string());
-                    return Err($err);
+                    Err($err)
                 }};
             }
             let _permit = local_sem.acquire().await.unwrap();
