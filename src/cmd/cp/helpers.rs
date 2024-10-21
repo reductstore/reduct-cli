@@ -317,10 +317,10 @@ fn init_task_progress_bar(
 ) -> (Option<u64>, ProgressBar) {
     let limit = query_params.limit;
     let sty = ProgressStyle::with_template(
-        "[{elapsed_precise}, ETA {eta_precise}] {bar:40.cyan/blue} {percent_precise:6}% {msg}",
+        "[{elapsed_precise}, ETA {eta_precise}] {bar:40.green/gray} {percent_precise:6}% {msg}",
     )
-    .unwrap()
-    .progress_chars("##-");
+    .unwrap();
+    // .progress_chars("##-");
 
     if let Some(limit) = limit {
         // progress for limited copying

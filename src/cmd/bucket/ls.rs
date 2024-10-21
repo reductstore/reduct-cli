@@ -140,13 +140,14 @@ mod tests {
 
         ls_bucket(&context, &args).await.unwrap();
 
-        assert_eq!(context
+        assert_eq!(*context
                        .stdout()
-                       .history(),
-                   vec!["| Name          | Entries | Size | Oldest record (UTC)      | Latest record (UTC)      |\n\
-                   |---------------|---------|------|--------------------------|--------------------------|\n\
-                   | test_bucket   | 1       | 74 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |\n\
-                   | test_bucket_2 | 0       | 0 B  | ---                      | ---                      |"]
-        );
+                       .history()
+                       .get(0)
+                       .unwrap(),
+                   vec!["| Name          | Entries | Size | Oldest record (UTC)      | Latest record (UTC)      |",
+                        "|---------------|---------|------|--------------------------|--------------------------|",
+                        "| test_bucket   | 1       | 74 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
+                        "| test_bucket_2 | 0       | 0 B  | ---                      | ---                      |"].join("\n"));
     }
 }
