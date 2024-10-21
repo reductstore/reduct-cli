@@ -6,6 +6,7 @@ pub(crate) mod alias;
 pub(crate) mod bucket;
 pub(crate) mod cp;
 pub(crate) mod replica;
+pub(crate) mod rm;
 pub(crate) mod server;
 pub(crate) mod token;
 

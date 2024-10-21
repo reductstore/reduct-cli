@@ -1177,9 +1177,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-rs"
-version = "1.12.0"
+version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f155e5331e4e3610480fdcec9927b8232d171fd7a64c0591cf047ffee55aaa2"
+checksum = "1ab257da6a91567311872726c73ae0c7310239e4fa4a93635e2d9a8d86dca53d"
 dependencies = [
  "async-channel",
  "async-stream",
