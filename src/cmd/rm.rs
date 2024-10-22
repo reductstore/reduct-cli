@@ -3,19 +3,22 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+mod batch_remover;
+mod query_remover;
+
+use crate::cmd::rm::batch_remover::BatchRemover;
+use crate::cmd::rm::query_remover::QueryRemover;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
 };
-use crate::parse::{
-    fetch_and_filter_entries, parse_query_params, parse_time, QueryParams, ResourcePathParser,
-};
+use crate::parse::{fetch_and_filter_entries, parse_query_params, QueryParams, ResourcePathParser};
 use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{Bucket, EntryInfo, RemoveQueryBuilder};
+use reduct_rs::{Bucket, EntryInfo};
 use serde::de::Visitor;
 use std::sync::Arc;
 use std::time::Duration;
@@ -58,7 +61,6 @@ pub(crate) fn rm_cmd() -> Command {
                 .help("Remove a record with a certain timestamp in ISO format or Unix timestamp in microseconds.")
                 .required(false)
                 .num_args(0..)
-
         )
 }
 
@@ -120,115 +122,139 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
     Ok(())
 }
 
+/// Trait for removing records from a bucket
+#[async_trait]
+trait RemoveRecords {
+    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64>;
+}
+
+/// Build a remover based on the query parameters
+/// If timestamps are provided, a BatchRemover will be created
 fn build_remover(
     query_params: QueryParams,
     timestamps: Option<Vec<String>>,
     bucket: Bucket,
 ) -> Arc<Box<dyn RemoveRecords + Send + Sync>> {
     let remover: Box<dyn RemoveRecords + Send + Sync> = if timestamps.is_some() {
-        Box::new(BatchRemover {
-            src_bucket: Arc::new(bucket),
-            query_params: query_params.clone(),
-            timestamps: timestamps.unwrap(),
-        })
+        Box::new(BatchRemover::new(bucket, timestamps.unwrap()))
     } else {
-        Box::new(QueryRemover {
-            src_bucket: Arc::new(bucket),
-            query_params: query_params.clone(),
-        })
+        Box::new(QueryRemover::new(bucket, query_params))
     };
     Arc::new(remover)
-}
-
-#[async_trait]
-trait RemoveRecords {
-    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64>;
-}
-
-struct QueryRemover {
-    src_bucket: Arc<Bucket>,
-    query_params: QueryParams,
-}
-
-#[async_trait]
-impl RemoveRecords for QueryRemover {
-    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64> {
-        let query_builder = build_query(&self.src_bucket, &entry, &self.query_params);
-        let removed_records = query_builder.send().await?;
-        Ok(removed_records)
-    }
-}
-
-struct BatchRemover {
-    src_bucket: Arc<Bucket>,
-    query_params: QueryParams,
-    timestamps: Vec<String>,
-}
-
-#[async_trait]
-impl RemoveRecords for BatchRemover {
-    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64> {
-        let mut batch = self.src_bucket.remove_batch(&entry.name);
-        for timestamp in &self.timestamps {
-            batch.append_timestamp_us(parse_time(Some(timestamp))?.unwrap());
-        }
-
-        let error_map = batch.send().await?;
-        Ok(self.timestamps.len() as u64 - error_map.len() as u64)
-    }
-}
-
-fn build_query(
-    src_bucket: &Bucket,
-    entry: &EntryInfo,
-    query_params: &QueryParams,
-) -> RemoveQueryBuilder {
-    let mut query_builder = src_bucket.remove_query(&entry.name);
-    if let Some(start) = query_params.start {
-        query_builder = query_builder.start_us(start as u64);
-    }
-
-    if let Some(stop) = query_params.stop {
-        query_builder = query_builder.stop_us(stop as u64);
-    }
-
-    if let Some(each_n) = query_params.each_n {
-        query_builder = query_builder.each_n(each_n);
-    }
-
-    if let Some(each_s) = query_params.each_s {
-        query_builder = query_builder.each_s(each_s);
-    }
-
-    query_builder = query_builder.include(query_params.include_labels.clone());
-    query_builder = query_builder.exclude(query_params.exclude_labels.clone());
-
-    query_builder
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::context;
+    use crate::context::tests::{bucket, context};
     use rstest::*;
 
     #[rstest]
     #[tokio::test]
-    async fn folder_to_folder_unsupported(context: CliContext) {
-        let args = cp_cmd()
-            .try_get_matches_from(vec!["cp", "./", "./"])
-            .unwrap();
-        let result = cp_handler(&context, &args).await;
-        assert!(result.is_err());
+    async fn test_remove_by_query(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket_with_record: Bucket,
+    ) {
+        let args = rm_cmd().get_matches_from(vec![
+            "rm",
+            &format!("local/{}", bucket.await),
+            "--start",
+            "100",
+            "--stop",
+            "200",
+        ]);
+        let bucket = bucket_with_record.await;
+
+        rm_handler(&context, &args).await.unwrap();
+
+        assert_eq!(
+            bucket
+                .read_record("entry-1")
+                .timestamp_us(150)
+                .send()
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "[NotFound] No record with timestamp 150"
+        );
+        assert_eq!(
+            bucket
+                .read_record("entry-2")
+                .timestamp_us(150)
+                .send()
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "[NotFound] No record with timestamp 150"
+        );
     }
 
     #[rstest]
     #[tokio::test]
-    async fn folder_to_bucket_unsupported(context: CliContext) {
-        let args = cp_cmd()
-            .try_get_matches_from(vec!["cp", "./", "local/bucket"])
+    async fn test_remove_in_batch(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket_with_record: Bucket,
+    ) {
+        let args = rm_cmd().get_matches_from(vec![
+            "rm",
+            &format!("local/{}", bucket.await),
+            "--time",
+            "150",
+            "100",
+        ]);
+        let bucket = bucket_with_record.await;
+
+        rm_handler(&context, &args).await.unwrap();
+
+        assert_eq!(
+            bucket
+                .read_record("entry-1")
+                .timestamp_us(150)
+                .send()
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "[NotFound] No record with timestamp 150"
+        );
+        assert_eq!(
+            bucket
+                .read_record("entry-2")
+                .timestamp_us(150)
+                .send()
+                .await
+                .err()
+                .unwrap()
+                .to_string(),
+            "[NotFound] No record with timestamp 150"
+        );
+    }
+
+    #[fixture]
+    pub(super) async fn bucket_with_record(
+        context: CliContext,
+        #[future] bucket: String,
+    ) -> Bucket {
+        let client = build_client(&context, "local").await.unwrap();
+        let bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+        bucket
+            .write_record("entry-1")
+            .data("data")
+            .timestamp_us(150)
+            .send()
+            .await
             .unwrap();
-        let result = cp_handler(&context, &args).await;
-        assert!(result.is_err());
+        bucket
+            .write_record("entry-2")
+            .data("data")
+            .timestamp_us(150)
+            .send()
+            .await
+            .unwrap();
+        bucket
     }
 }
