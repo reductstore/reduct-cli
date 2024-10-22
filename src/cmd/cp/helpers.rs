@@ -7,17 +7,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytesize::ByteSize;
-use chrono::DateTime;
-use clap::ArgMatches;
 use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{Bucket, EntryInfo, ErrorCode, Labels, QueryBuilder, Record, ReductError};
+use reduct_rs::{Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 
-use crate::context::CliContext;
-use crate::parse::widely_used_args::parse_label_args;
-use crate::parse::{fetch_and_filter_entries, parse_time, QueryParams};
+use crate::parse::{fetch_and_filter_entries, QueryParams};
 
 pub(super) struct TransferProgress {
     entry: EntryInfo,
@@ -274,14 +270,14 @@ mod tests {
     use super::*;
 
     mod downloading {
+        use crate::context::tests::{bucket, context};
+        use crate::context::CliContext;
+        use crate::io::reduct::build_client;
         use async_trait::async_trait;
         use bytes::Bytes;
         use mockall::mock;
         use mockall::predicate::{always, eq};
-
-        use crate::context::tests::{bucket, context};
-        use crate::context::CliContext;
-        use crate::io::reduct::build_client;
+        use reduct_rs::Labels;
 
         use super::*;
 

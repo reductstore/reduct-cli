@@ -61,7 +61,7 @@ mod tests {
     use crate::cmd::rm::query_remover::QueryRemover;
     use crate::cmd::rm::tests::bucket_with_record;
     use crate::cmd::rm::RemoveRecords;
-    use crate::context::tests::bucket;
+
     use crate::parse::QueryParams;
     use reduct_rs::{Bucket, EntryInfo};
     use rstest::*;
@@ -69,7 +69,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_query_remover(#[future] bucket_with_record: Bucket, #[future] bucket: String) {
+    async fn test_query_remover(#[future] bucket_with_record: Bucket) {
         let bucket = bucket_with_record.await;
         let query_params = QueryParams {
             start: Some(100),

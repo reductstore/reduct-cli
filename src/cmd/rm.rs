@@ -19,7 +19,6 @@ use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reduct_rs::{Bucket, EntryInfo};
-use serde::de::Visitor;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
