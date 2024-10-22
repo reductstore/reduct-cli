@@ -3,7 +3,12 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use reduct_rs::{Bucket, EntryInfo};
+use crate::context::CliContext;
+use crate::parse::widely_used_args::parse_label_args;
+use chrono::DateTime;
+use clap::ArgMatches;
+use reduct_rs::{Bucket, EntryInfo, Labels};
+use std::time::Duration;
 
 pub(crate) async fn fetch_and_filter_entries(
     src_bucket: &Bucket,
@@ -26,4 +31,238 @@ pub(crate) async fn fetch_and_filter_entries(
         .map(|entry| entry.clone())
         .collect::<Vec<EntryInfo>>();
     Ok(entries)
+}
+
+pub(crate) fn parse_time(time_str: Option<&String>) -> anyhow::Result<Option<u64>> {
+    if time_str.is_none() {
+        return Ok(None);
+    }
+
+    let time_str = time_str.unwrap();
+    let time = if let Ok(time) = time_str.parse::<i64>() {
+        if time < 0 {
+            return Err(anyhow::anyhow!("Time must be a positive integer"));
+        }
+        time
+    } else {
+        // try parse as ISO 8601
+        DateTime::parse_from_rfc3339(time_str)
+            .map_err(|err| anyhow::anyhow!("Failed to parse time {}: {}", time_str, err))?
+            .timestamp_micros()
+    };
+
+    Ok(Some(time as u64))
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct QueryParams {
+    pub start: Option<u64>,
+    pub stop: Option<u64>,
+    pub include_labels: Labels,
+    pub exclude_labels: Labels,
+    pub each_n: Option<u64>,
+    pub each_s: Option<f64>,
+    pub limit: Option<u64>,
+    pub entry_filter: Vec<String>,
+    pub parallel: usize,
+    pub ttl: Duration,
+}
+
+impl Default for QueryParams {
+    fn default() -> Self {
+        Self {
+            start: None,
+            stop: None,
+            include_labels: Labels::new(),
+            exclude_labels: Labels::new(),
+            each_n: None,
+            each_s: None,
+            limit: None,
+            entry_filter: Vec::new(),
+            parallel: 1,
+            ttl: Duration::from_secs(60),
+        }
+    }
+}
+
+pub(crate) fn parse_query_params(
+    ctx: &CliContext,
+    args: &ArgMatches,
+) -> anyhow::Result<QueryParams> {
+    let start = parse_time(args.get_one::<String>("start"))?;
+    let stop = parse_time(args.get_one::<String>("stop"))?;
+    let include_labels = parse_label_args(args.get_many::<String>("include"))?.unwrap_or_default();
+    let exclude_labels = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
+    let each_n = args.get_one::<u64>("each-n").map(|n| *n);
+    let each_s = args.get_one::<f64>("each-s").map(|s| *s);
+
+    // arguments aren't used in all cases
+    let limit = args
+        .try_get_one::<u64>("limit")
+        .ok()
+        .unwrap_or(None)
+        .map(|n| *n);
+
+    let entries_filter = args
+        .get_many::<String>("entries")
+        .unwrap_or_default()
+        .map(|s| s.to_string())
+        .collect::<Vec<String>>();
+
+    Ok(QueryParams {
+        start,
+        stop,
+        include_labels,
+        exclude_labels,
+        each_n,
+        each_s,
+        limit,
+        entry_filter: entries_filter,
+        parallel: ctx.parallel(),
+        ttl: ctx.timeout() * ctx.parallel() as u32,
+    })
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    mod parse_query_params {
+        use crate::cmd::cp::cp_cmd;
+        use crate::context::tests::context;
+        use rstest::rstest;
+
+        use super::*;
+
+        #[rstest]
+        fn parse_start_stop(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.start, None);
+            assert_eq!(query_params.stop, None);
+        }
+
+        #[rstest]
+        fn parse_start_stop_with_values(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--start",
+                    "100",
+                    "--stop",
+                    "200",
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.start, Some(100));
+            assert_eq!(query_params.stop, Some(200));
+        }
+
+        #[rstest]
+        fn parse_start_stop_iso8601(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--start",
+                    "2023-01-01T00:00:00Z",
+                    "--stop",
+                    "2023-01-02T00:00:00Z",
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.start, Some(1672531200000000));
+            assert_eq!(query_params.stop, Some(1672617600000000));
+        }
+
+        #[rstest]
+        fn parse_include_exclude(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--include",
+                    "key1=value1",
+                    "key2=value2",
+                    "--exclude",
+                    "key3=value3",
+                    "key4=value4",
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(
+                query_params.include_labels,
+                Labels::from_iter(vec![
+                    ("key1".to_string(), "value1".to_string()),
+                    ("key2".to_string(), "value2".to_string()),
+                ])
+            );
+            assert_eq!(
+                query_params.exclude_labels,
+                Labels::from_iter(vec![
+                    ("key3".to_string(), "value3".to_string()),
+                    ("key4".to_string(), "value4".to_string()),
+                ])
+            );
+        }
+
+        #[rstest]
+        fn parse_each_n(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-n", "10"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.each_n, Some(10));
+        }
+
+        #[rstest]
+        fn parse_each_s(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-s", "10"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.each_s, Some(10.0));
+        }
+
+        #[rstest]
+        fn parse_limit(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--limit", "100"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.limit, Some(100));
+        }
+
+        #[rstest]
+        fn parse_entries_filter(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--entries",
+                    "entry-1",
+                    "entry-2",
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(
+                query_params.entry_filter,
+                vec![String::from("entry-1"), String::from("entry-2")]
+            );
+        }
+    }
 }

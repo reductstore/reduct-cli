@@ -3,9 +3,10 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::cmd::cp::helpers::{parse_query_params, start_loading, CopyVisitor};
+use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
+use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
 use std::sync::Arc;
