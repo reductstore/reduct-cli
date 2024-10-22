@@ -63,7 +63,7 @@ reduct-cli bucket ls --full play
 reduct-cli cp play/datasets ./datasets --limit 100
 ```
 
-For more examples, see the [Guides](https://reduct.store/docs/guides) section in the ReductStore documentation.
+For more examples, see the [Guides](https://www.reduct.store/docs/guides) section in the ReductStore documentation.
 
 
 ## Links
