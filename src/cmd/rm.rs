@@ -12,10 +12,11 @@ use crate::parse::widely_used_args::{
 use crate::parse::{
     fetch_and_filter_entries, parse_query_params, parse_time, QueryParams, ResourcePathParser,
 };
-use clap::ArgAction::SetTrue;
-use clap::{value_parser, Arg, Command};
+use async_trait::async_trait;
+use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{Bucket, EntryInfo, QueryBuilder, RemoveQueryBuilder, RemoveRecordBuilder};
+use reduct_rs::{Bucket, EntryInfo, RemoveQueryBuilder};
+use serde::de::Visitor;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -49,12 +50,24 @@ pub(crate) fn rm_cmd() -> Command {
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
+        .arg(
+            Arg::new("time")
+                .long("time")
+                .short('T')
+                .value_name("TIMESTAMP")
+                .help("Remove a record with a certain timestamp in ISO format or Unix timestamp in microseconds.")
+                .required(false)
+                .num_args(0..)
+
+        )
 }
 
 pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let (alias, bucket) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
-
     let query_params = parse_query_params(ctx, &args)?;
+    let timestamps = args
+        .get_many::<String>("time")
+        .map(|values| values.map(|s| s.clone()).collect::<Vec<String>>());
 
     let client = build_client(ctx, &alias).await?;
     let bucket = client.get_bucket(&bucket).await?;
@@ -64,13 +77,14 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
     let progress = MultiProgress::new();
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
+    let remover = build_remover(query_params, timestamps, bucket);
 
     for entry in entries {
-        let mut query_builder = build_query(&bucket, &entry, &query_params);
         let local_sem = Arc::clone(&semaphore);
+        let local_remover = Arc::clone(&remover);
 
         let spinner = progress.add(ProgressBar::new_spinner());
-
+        let entry_name = entry.name.clone();
         tasks.spawn(async move {
             spinner.enable_steady_tick(Duration::from_millis(120));
             spinner.set_style(
@@ -80,20 +94,20 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
                     // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
                     .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
             );
-            spinner.set_message(format!("Removing records from '{}'", entry.name));
+            spinner.set_message(format!("Removing records from '{}'", entry_name));
 
             let _permit = local_sem.acquire().await.unwrap();
-            match query_builder.send().await {
+            match local_remover.remove_records(entry).await {
                 Ok(removed_records) => {
                     spinner.finish_with_message(format!(
                         "Removed {} records from '{}'",
-                        removed_records, entry.name
+                        removed_records, entry_name
                     ));
                 }
                 Err(err) => {
                     spinner.finish_with_message(format!(
                         "Failed to remove records from '{}': {}",
-                        entry.name, err
+                        entry_name, err
                     ));
                 }
             }
@@ -103,8 +117,65 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
     while let Some(result) = tasks.join_next().await {
         let _ = result?;
     }
-
     Ok(())
+}
+
+fn build_remover(
+    query_params: QueryParams,
+    timestamps: Option<Vec<String>>,
+    bucket: Bucket,
+) -> Arc<Box<dyn RemoveRecords + Send + Sync>> {
+    let remover: Box<dyn RemoveRecords + Send + Sync> = if timestamps.is_some() {
+        Box::new(BatchRemover {
+            src_bucket: Arc::new(bucket),
+            query_params: query_params.clone(),
+            timestamps: timestamps.unwrap(),
+        })
+    } else {
+        Box::new(QueryRemover {
+            src_bucket: Arc::new(bucket),
+            query_params: query_params.clone(),
+        })
+    };
+    Arc::new(remover)
+}
+
+#[async_trait]
+trait RemoveRecords {
+    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64>;
+}
+
+struct QueryRemover {
+    src_bucket: Arc<Bucket>,
+    query_params: QueryParams,
+}
+
+#[async_trait]
+impl RemoveRecords for QueryRemover {
+    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64> {
+        let query_builder = build_query(&self.src_bucket, &entry, &self.query_params);
+        let removed_records = query_builder.send().await?;
+        Ok(removed_records)
+    }
+}
+
+struct BatchRemover {
+    src_bucket: Arc<Bucket>,
+    query_params: QueryParams,
+    timestamps: Vec<String>,
+}
+
+#[async_trait]
+impl RemoveRecords for BatchRemover {
+    async fn remove_records(&self, entry: EntryInfo) -> anyhow::Result<u64> {
+        let mut batch = self.src_bucket.remove_batch(&entry.name);
+        for timestamp in &self.timestamps {
+            batch.append_timestamp_us(parse_time(Some(timestamp))?.unwrap());
+        }
+
+        let error_map = batch.send().await?;
+        Ok(self.timestamps.len() as u64 - error_map.len() as u64)
+    }
 }
 
 fn build_query(

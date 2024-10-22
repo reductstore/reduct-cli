@@ -54,6 +54,7 @@ pub(crate) fn parse_time(time_str: Option<&String>) -> anyhow::Result<Option<u64
     Ok(Some(time as u64))
 }
 
+#[derive(Clone, Debug)]
 pub(crate) struct QueryParams {
     pub start: Option<u64>,
     pub stop: Option<u64>,
