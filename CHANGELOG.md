@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added:
 
 - RS-507: `bucket rename` command, [PR-21](https://github.com/reductstore/reduct-cli/pull/21)
-- RS-508: Add `--only-entry` option to rename an entry, [PR-22](https://github.com/reductstore/reduct-cli/pull/22)
+- RS-508: `--only-entry` option to rename an entry, [PR-22](https://github.com/reductstore/reduct-cli/pull/22)
+- RS-451: `reduct-cli rm` command for removing records`, [PR-25](https://github.com/reductstore/reduct-cli/pull/25)
 
 ### Fixed:
 
