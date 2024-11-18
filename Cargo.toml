@@ -38,4 +38,4 @@ tabled = "0.16.0"
 [dev-dependencies]
 rstest = "0.23.0"
 tempfile = "3.10.0"
-mockall = "0.13.0"
+mockall = "0.13.1"
