@@ -1268,9 +1268,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-base"
-version = "1.12.1"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ed7a997908e96b09e5b12945591c657d1e9c2cc8065bb698a051095dbd55637"
+checksum = "9aaac34a64b314c0472d8d713996d295439b10135e7bb38335ed5a2b5dc2f01b"
 dependencies = [
  "chrono",
  "http",
@@ -1312,9 +1312,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-rs"
-version = "1.12.1"
+version = "1.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ab257da6a91567311872726c73ae0c7310239e4fa4a93635e2d9a8d86dca53d"
+checksum = "762242739ff002c8449448bdd40862ec7af789b29eff7e2bfef8b3e7375763aa"
 dependencies = [
  "async-channel",
  "async-stream",
@@ -1325,7 +1325,6 @@ dependencies = [
  "http",
  "reduct-base",
  "reqwest",
- "rustls",
  "serde",
  "serde_json",
  "tokio",
