@@ -50,6 +50,7 @@ pub(crate) fn rm_cmd() -> Command {
         .arg(make_include_arg())
         .arg(make_exclude_arg())
         .arg(make_entries_arg())
+        .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
         .arg(
