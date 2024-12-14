@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added:
+
+- RS-552: Add when and strict arguments to cp and rm commands, [PR-51](https://github.com/reductstore/reduct-cli/pull/51)
+
 ## [0.4.0] - 2024-10-22
 
 ### Added:

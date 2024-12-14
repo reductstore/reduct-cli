@@ -8,6 +8,7 @@ use crate::parse::widely_used_args::parse_label_args;
 use chrono::DateTime;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, EntryInfo, Labels};
+use serde_json::Value;
 use std::time::Duration;
 
 pub(crate) async fn fetch_and_filter_entries(
@@ -66,6 +67,8 @@ pub(crate) struct QueryParams {
     pub entry_filter: Vec<String>,
     pub parallel: usize,
     pub ttl: Duration,
+    pub when: Option<Value>,
+    pub strict: bool,
 }
 
 impl Default for QueryParams {
@@ -81,6 +84,8 @@ impl Default for QueryParams {
             entry_filter: Vec::new(),
             parallel: 1,
             ttl: Duration::from_secs(60),
+            when: None,
+            strict: false,
         }
     }
 }
@@ -95,6 +100,8 @@ pub(crate) fn parse_query_params(
     let exclude_labels = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
     let each_n = args.get_one::<u64>("each-n").map(|n| *n);
     let each_s = args.get_one::<f64>("each-s").map(|s| *s);
+    let when = args.get_one::<String>("when").map(|s| s.to_string());
+    let strict = args.get_one::<bool>("strict").unwrap_or(&false);
 
     // arguments aren't used in all cases
     let limit = args
@@ -109,6 +116,17 @@ pub(crate) fn parse_query_params(
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
+    let json_when = match when {
+        Some(when) => {
+            let when = match serde_json::from_str(&when) {
+                Ok(when) => when,
+                Err(err) => return Err(anyhow::anyhow!("Failed to parse when parameter: {}", err)),
+            };
+            Some(when)
+        }
+        None => None,
+    };
+
     Ok(QueryParams {
         start,
         stop,
@@ -120,6 +138,8 @@ pub(crate) fn parse_query_params(
         entry_filter: entries_filter,
         parallel: ctx.parallel(),
         ttl: ctx.timeout() * ctx.parallel() as u32,
+        when: json_when,
+        strict: *strict,
     })
 }
 
@@ -263,6 +283,52 @@ mod test {
                 query_params.entry_filter,
                 vec![String::from("entry-1"), String::from("entry-2")]
             );
+        }
+
+        #[rstest]
+        fn parse_when(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--when",
+                    r#"{"$gt": 100}"#,
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.when, Some(serde_json::json!({"$gt": 100})));
+        }
+
+        #[rstest]
+        fn parse_when_invalid(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--when",
+                    r#"{"$gt": 100"#,
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args);
+
+            assert!(query_params
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Failed to parse when parameter"));
+        }
+
+        #[rstest]
+        fn parse_strict(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--strict"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.strict, true);
         }
     }
 }

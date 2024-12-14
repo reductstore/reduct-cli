@@ -108,11 +108,11 @@ impl TransferProgress {
 fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParams) -> QueryBuilder {
     let mut query_builder = src_bucket.query(&entry.name);
     if let Some(start) = query_params.start {
-        query_builder = query_builder.start_us(start as u64);
+        query_builder = query_builder.start_us(start);
     }
 
     if let Some(stop) = query_params.stop {
-        query_builder = query_builder.stop_us(stop as u64);
+        query_builder = query_builder.stop_us(stop);
     }
 
     if let Some(each_n) = query_params.each_n {
@@ -123,8 +123,13 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
         query_builder = query_builder.each_s(each_s);
     }
 
+    if let Some(when) = &query_params.when {
+        query_builder = query_builder.when(when.clone());
+    }
+
     query_builder = query_builder.include(query_params.include_labels.clone());
     query_builder = query_builder.exclude(query_params.exclude_labels.clone());
+    query_builder = query_builder.strict(query_params.strict);
 
     if let Some(limit) = query_params.limit {
         query_builder = query_builder.limit(limit);
@@ -206,7 +211,6 @@ where
                 }
 
                 transfer_progress.update(timestamp, content_length);
-
                 sleep(Duration::from_micros(5)).await;
             }
 
