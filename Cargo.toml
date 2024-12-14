@@ -14,7 +14,7 @@ description = "A CLI client for ReductStore written in Rust"
 
 [dependencies]
 reduct-rs = "1.13.0"
-clap = { version = "4.5.21", features = ["cargo"] }
+clap = { version = "4.5.23", features = ["cargo"] }
 dirs = "5.0.1"
 toml = "0.8.10"
 serde = { version = "1.0.215", features = ["derive"] }
