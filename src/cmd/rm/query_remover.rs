@@ -52,6 +52,12 @@ impl QueryRemover {
         query_builder = query_builder.include(self.query_params.include_labels.clone());
         query_builder = query_builder.exclude(self.query_params.exclude_labels.clone());
 
+        if let Some(when) = &self.query_params.when {
+            query_builder = query_builder.when(when.clone());
+        }
+
+        query_builder = query_builder.strict(self.query_params.strict);
+
         query_builder
     }
 }
@@ -82,6 +88,8 @@ mod tests {
             include_labels: HashMap::new(),
             exclude_labels: HashMap::new(),
             ttl: Default::default(),
+            when: None,
+            strict: false,
         };
 
         let query_remover = QueryRemover::new(bucket, query_params);

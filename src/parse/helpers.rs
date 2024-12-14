@@ -118,7 +118,10 @@ pub(crate) fn parse_query_params(
 
     let json_when = match when {
         Some(when) => {
-            let when = serde_json::from_str(&when)?;
+            let when = match serde_json::from_str(&when) {
+                Ok(when) => when,
+                Err(err) => return Err(anyhow::anyhow!("Failed to parse when parameter: {}", err)),
+            };
             Some(when)
         }
         None => None,
@@ -280,6 +283,52 @@ mod test {
                 query_params.entry_filter,
                 vec![String::from("entry-1"), String::from("entry-2")]
             );
+        }
+
+        #[rstest]
+        fn parse_when(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--when",
+                    r#"{"$gt": 100}"#,
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.when, Some(serde_json::json!({"$gt": 100})));
+        }
+
+        #[rstest]
+        fn parse_when_invalid(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    "serv/buck1",
+                    "serv/buck2",
+                    "--when",
+                    r#"{"$gt": 100"#,
+                ])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args);
+
+            assert!(query_params
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Failed to parse when parameter"));
+        }
+
+        #[rstest]
+        fn parse_strict(context: CliContext) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--strict"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args).unwrap();
+
+            assert_eq!(query_params.strict, true);
         }
     }
 }
