@@ -17,7 +17,7 @@ reduct-rs = "1.13.0"
 clap = { version = "4.5.23", features = ["cargo"] }
 dirs = "5.0.1"
 toml = "0.8.10"
-serde = { version = "1.0.216", features = ["derive"] }
+serde = { version = "1.0.217", features = ["derive"] }
 anyhow = "1.0.94"
 url = { version = "2.5.4", features = ["serde"] }
 tokio = { version = "1.41.1", features = ["rt-multi-thread"] }
