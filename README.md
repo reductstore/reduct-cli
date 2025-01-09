@@ -11,7 +11,7 @@ blob data.
 
 ## Features
 
-* Support for ReductStore API v1.12
+* Support for ReductStore API v1.13
 * Easy management of buckets, tokens and replications
 * Ability to check the status of a storage engine
 * Aliases for storing server credentials
