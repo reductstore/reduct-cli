@@ -32,7 +32,7 @@ indicatif = "0.17.9"
 async-trait = "0.1.78"
 bytes = "1.9.0"
 mime_guess = "2.0.4"
-serde_json = "1.0.133"
+serde_json = "1.0.134"
 tabled = "0.17.0"
 
 [dev-dependencies]
