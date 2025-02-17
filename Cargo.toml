@@ -28,7 +28,7 @@ colored = "3.0.0"
 chrono = "0.4.39"
 dialoguer = "0.11.0"
 futures-util = { version = "0.3.30", features = [] }
-indicatif = "0.17.9"
+indicatif = "0.17.11"
 async-trait = "0.1.78"
 bytes = "1.10.0"
 mime_guess = "2.0.4"
