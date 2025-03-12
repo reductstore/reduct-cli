@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
     parse_label_args,
 };
 use crate::parse::ResourcePathParser;
@@ -43,6 +43,7 @@ pub(super) fn update_replica_cmd() -> Command {
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
+        .arg(make_when_arg())
 }
 
 pub(super) async fn update_replica_handler(
@@ -83,6 +84,7 @@ fn update_replication_settings(
     let exclude = parse_label_args(args.get_many::<String>("exclude"))?;
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
+    let when = args.get_one::<String>("when");
 
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
     current_settings.dst_bucket = dest_bucket_name.clone();
@@ -111,6 +113,10 @@ fn update_replication_settings(
 
     if let Some(each_s) = each_s {
         current_settings.each_s = Some(*each_s);
+    }
+
+    if let Some(when) = when {
+        current_settings.when = serde_json::from_str(&when)?;
     }
 
     Ok(current_settings)

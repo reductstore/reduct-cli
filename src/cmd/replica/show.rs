@@ -7,6 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
 use clap::{Arg, Command};
+use serde_json::json;
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -78,7 +79,11 @@ pub(super) async fn show_replica_handler(
         replica.diagnostics.hourly.errored,
         replica.settings.exclude
     );
-
+    output!(
+        ctx,
+        "                                          When:     {}",
+        serde_json::to_string(&replica.settings.when.unwrap_or(json!({})))?
+    );
     output!(
         ctx,
         "                                          Each Nth: {:<5?},        Each Sec: {:<5?}\n",

@@ -6,7 +6,7 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
     parse_label_args,
 };
 use crate::parse::ResourcePathParser;
@@ -39,6 +39,7 @@ pub(super) fn create_replica_cmd() -> Command {
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
+        .arg(make_when_arg())
 }
 
 pub(super) async fn create_replica(
@@ -62,6 +63,8 @@ pub(super) async fn create_replica(
     let exclude = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
+    let when = args.get_one::<String>("when");
+
     let client = build_client(ctx, &alias_or_url).await?;
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
 
@@ -74,6 +77,10 @@ pub(super) async fn create_replica(
         .include(Labels::from_iter(include))
         .exclude(Labels::from_iter(exclude))
         .entries(entries_filter);
+
+    if let Some(when) = when {
+        builder = builder.when(serde_json::from_str(&when)?);
+    }
 
     if let Some(n) = each_n {
         builder = builder.each_n(*n);
