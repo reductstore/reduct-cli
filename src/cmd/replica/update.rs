@@ -303,6 +303,7 @@ mod tests {
                 each_n: None,
                 each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
+                when: None,
             }
         }
     }

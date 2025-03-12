@@ -44,7 +44,7 @@ struct EntryTable {
     block_count: u64,
 
     #[tabled(rename = "Size")]
-    size: ByteSize,
+    size: String,
     #[tabled(rename = "Oldest Record (UTC)")]
     oldest_record: String,
     #[tabled(rename = "Latest Record (UTC)")]
@@ -57,7 +57,7 @@ impl From<EntryInfo> for EntryTable {
             name: entry.name,
             record_count: entry.record_count,
             block_count: entry.block_count,
-            size: ByteSize(entry.size),
+            size: ByteSize(entry.size).display().si().to_string(),
             oldest_record: timestamp_to_iso(entry.oldest_record, entry.record_count == 0),
             latest_record: timestamp_to_iso(entry.latest_record, entry.record_count == 0),
         }
@@ -82,7 +82,11 @@ pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::
 fn print_bucket(ctx: &CliContext, bucket: BucketInfo) -> anyhow::Result<()> {
     output!(ctx, "Name:                {}", bucket.name);
     output!(ctx, "Entries:             {}", bucket.entry_count);
-    output!(ctx, "Size:                {}", ByteSize(bucket.size));
+    output!(
+        ctx,
+        "Size:                {}",
+        ByteSize(bucket.size).display().si()
+    );
     output!(
         ctx,
         "Oldest Record (UTC): {}",
@@ -109,13 +113,13 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
         ctx,
         "Entries:             {:<30} Quota Size:         {}",
         info.entry_count,
-        ByteSize(settings.quota_size.unwrap())
+        ByteSize(settings.quota_size.unwrap()).display().si()
     );
     output!(
         ctx,
         "Size:                {:30} Max. Block Size:    {}",
-        ByteSize(info.size),
-        ByteSize(settings.max_block_size.unwrap())
+        ByteSize(info.size).display().si().to_string(),
+        ByteSize(settings.max_block_size.unwrap()).display().si()
     );
     output!(
         ctx,
