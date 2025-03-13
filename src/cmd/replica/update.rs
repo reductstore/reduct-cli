@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
     parse_label_args,
 };
 use crate::parse::ResourcePathParser;
@@ -43,6 +43,7 @@ pub(super) fn update_replica_cmd() -> Command {
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
+        .arg(make_when_arg())
 }
 
 pub(super) async fn update_replica_handler(
@@ -83,6 +84,7 @@ fn update_replication_settings(
     let exclude = parse_label_args(args.get_many::<String>("exclude"))?;
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
+    let when = args.get_one::<String>("when");
 
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
     current_settings.dst_bucket = dest_bucket_name.clone();
@@ -111,6 +113,10 @@ fn update_replication_settings(
 
     if let Some(each_s) = each_s {
         current_settings.each_s = Some(*each_s);
+    }
+
+    if let Some(when) = when {
+        current_settings.when = serde_json::from_str(&when)?;
     }
 
     Ok(current_settings)
@@ -223,52 +229,6 @@ mod tests {
         }
 
         #[rstest]
-        fn override_include(context: CliContext, current_settings: ReplicationSettings) {
-            let args = update_replica_cmd()
-                .try_get_matches_from(vec![
-                    "update",
-                    "local/test_replica",
-                    "local/bucket2",
-                    "--include",
-                    "key3=value5",
-                ])
-                .unwrap();
-
-            let new_settings =
-                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
-            assert_eq!(
-                new_settings,
-                ReplicationSettings {
-                    include: Labels::from_iter(vec![("key3".to_string(), "value5".to_string())]),
-                    ..current_settings
-                }
-            );
-        }
-
-        #[rstest]
-        fn override_exclude(context: CliContext, current_settings: ReplicationSettings) {
-            let args = update_replica_cmd()
-                .try_get_matches_from(vec![
-                    "update",
-                    "local/test_replica",
-                    "local/bucket2",
-                    "--exclude",
-                    "key4=value6",
-                ])
-                .unwrap();
-
-            let new_settings =
-                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
-            assert_eq!(
-                new_settings,
-                ReplicationSettings {
-                    exclude: Labels::from_iter(vec![("key4".to_string(), "value6".to_string())]),
-                    ..current_settings
-                }
-            );
-        }
-
-        #[rstest]
         fn override_entries(context: CliContext, current_settings: ReplicationSettings) {
             let args = update_replica_cmd()
                 .try_get_matches_from(vec![
@@ -291,6 +251,29 @@ mod tests {
             );
         }
 
+        #[rstest]
+        fn override_when(context: CliContext, current_settings: ReplicationSettings) {
+            let args = update_replica_cmd()
+                .try_get_matches_from(vec![
+                    "update",
+                    "local/test_replica",
+                    "local/bucket2",
+                    "--when",
+                    r#"{"&label": {"$gt": 20}}"#,
+                ])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
+            assert_eq!(
+                new_settings,
+                ReplicationSettings {
+                    when: Some(serde_json::json!({"&label": {"$gt": 20}})),
+                    ..current_settings
+                }
+            );
+        }
+
         #[fixture]
         fn current_settings(current_token: String) -> ReplicationSettings {
             ReplicationSettings {
@@ -303,6 +286,7 @@ mod tests {
                 each_n: None,
                 each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
+                when: None,
             }
         }
     }

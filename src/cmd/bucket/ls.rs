@@ -61,7 +61,7 @@ struct BucketTable {
     #[tabled(rename = "Entries")]
     entry_count: u64,
     #[tabled(rename = "Size")]
-    size: ByteSize,
+    size: String,
     #[tabled(rename = "Oldest record (UTC)")]
     oldest_record: String,
     #[tabled(rename = "Latest record (UTC)")]
@@ -73,7 +73,7 @@ impl From<BucketInfo> for BucketTable {
         Self {
             name: bucket.name,
             entry_count: bucket.entry_count,
-            size: ByteSize(bucket.size),
+            size: ByteSize(bucket.size).display().si().to_string(),
             oldest_record: timestamp_to_iso(bucket.oldest_record, bucket.entry_count == 0),
             latest_record: timestamp_to_iso(bucket.latest_record, bucket.entry_count == 0),
         }
