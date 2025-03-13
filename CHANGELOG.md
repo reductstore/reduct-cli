@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added:
+
+- RS-624: Add option --when for replication settings. [PR-78](https://github.com/reductstore/reduct-cli/pull/78)
+
 ## [0.5.0] - 2024-12-14
 
 ### Added:
