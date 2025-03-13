@@ -98,7 +98,9 @@ pub(super) async fn create_replica(
 mod tests {
     use super::*;
     use crate::context::tests::{bucket, bucket2, context, replica};
+    use reduct_rs::JsonValue;
     use rstest::rstest;
+    use serde_json::json;
 
     #[rstest]
     #[tokio::test]
@@ -132,6 +134,8 @@ mod tests {
             "10",
             "--each-s",
             "0.5",
+            "--when",
+            r#"{"&label": {"$gt": 10}}"#,
         ]);
         create_replica(&context, &args).await.unwrap();
 
@@ -154,6 +158,10 @@ mod tests {
         );
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
+        assert_eq!(
+            replica.settings.when.unwrap(),
+            json!({"&label": {"$gt": 10}})
+        );
     }
 
     #[rstest]

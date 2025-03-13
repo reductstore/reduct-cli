@@ -229,52 +229,6 @@ mod tests {
         }
 
         #[rstest]
-        fn override_include(context: CliContext, current_settings: ReplicationSettings) {
-            let args = update_replica_cmd()
-                .try_get_matches_from(vec![
-                    "update",
-                    "local/test_replica",
-                    "local/bucket2",
-                    "--include",
-                    "key3=value5",
-                ])
-                .unwrap();
-
-            let new_settings =
-                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
-            assert_eq!(
-                new_settings,
-                ReplicationSettings {
-                    include: Labels::from_iter(vec![("key3".to_string(), "value5".to_string())]),
-                    ..current_settings
-                }
-            );
-        }
-
-        #[rstest]
-        fn override_exclude(context: CliContext, current_settings: ReplicationSettings) {
-            let args = update_replica_cmd()
-                .try_get_matches_from(vec![
-                    "update",
-                    "local/test_replica",
-                    "local/bucket2",
-                    "--exclude",
-                    "key4=value6",
-                ])
-                .unwrap();
-
-            let new_settings =
-                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
-            assert_eq!(
-                new_settings,
-                ReplicationSettings {
-                    exclude: Labels::from_iter(vec![("key4".to_string(), "value6".to_string())]),
-                    ..current_settings
-                }
-            );
-        }
-
-        #[rstest]
         fn override_entries(context: CliContext, current_settings: ReplicationSettings) {
             let args = update_replica_cmd()
                 .try_get_matches_from(vec![
@@ -292,6 +246,29 @@ mod tests {
                 new_settings,
                 ReplicationSettings {
                     entries: vec!["entry3".to_string()],
+                    ..current_settings
+                }
+            );
+        }
+
+        #[rstest]
+        fn override_when(context: CliContext, current_settings: ReplicationSettings) {
+            let args = update_replica_cmd()
+                .try_get_matches_from(vec![
+                    "update",
+                    "local/test_replica",
+                    "local/bucket2",
+                    "--when",
+                    r#"{"&label": {"$gt": 20}}"#,
+                ])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
+            assert_eq!(
+                new_settings,
+                ReplicationSettings {
+                    when: Some(serde_json::json!({"&label": {"$gt": 20}})),
                     ..current_settings
                 }
             );
