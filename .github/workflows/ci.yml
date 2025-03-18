@@ -35,13 +35,14 @@ jobs:
     needs:
       - rust_fmt
     strategy:
-      include:
-        - os: ubuntu-latest
-          target: x86_64-unknown-linux-gnu
-        - os: macos-latest
-          target: x86_64-apple-darwin
-        - os: windows-latest
-          target: x86_64-pc-windows-msvc
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
