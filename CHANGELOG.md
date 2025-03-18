@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - RS-624: Add option --when for replication settings. [PR-78](https://github.com/reductstore/reduct-cli/pull/78)
 
+### Changed:
+
+RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstore/reduct-cli/pull/85)
+
 ## [0.5.0] - 2024-12-14
 
 ### Added:
