@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed:
+
+- RS-647: Build binaries for ARM64 Linux and Macos, [PR-92](https://github.com/reductstore/reduct-cli/pull/92)
+
 ## [0.6.0] - 2025-03-18
 
 ### Added:
