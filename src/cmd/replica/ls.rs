@@ -145,9 +145,7 @@ mod tests {
         assert_eq!(
             context.stdout().history(),
             vec![
-                "| Name         | State    | Pending Records | Provisioned |\n\
-            |--------------|----------|-----------------|-------------|\n\
-            | test_replica | Inactive | 0               | false       |"
+                "| Name         | State  | Pending Records | Provisioned |\n|--------------|--------|-----------------|-------------|\n| test_replica | Active | 0               | false       |"
             ]
         );
     }

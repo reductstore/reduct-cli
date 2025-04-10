@@ -36,13 +36,30 @@ jobs:
       - rust_fmt
     strategy:
       matrix:
+        target:
+          [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-pc-windows-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+          ]
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - target: "x86_64-unknown-linux-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc"
+          - target: "aarch64-unknown-linux-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc-aarch64-linux-gnu"
+          - target: "x86_64-pc-windows-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc-mingw-w64-x86-64"
+          - target: "x86_64-apple-darwin"
+            os: macos-14
+            compiler: "gcc-x86_64-apple-darwin"
+          - target: "aarch64-apple-darwin"
+            os: macos-14
+            compiler: "gcc"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +70,17 @@ jobs:
           toolchain: ${{ env.MINIMAL_RUST_VERSION }}
           target: ${{ matrix.target }}
 
+      - name: Install gcc
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.compiler }}
+
+      - name: Install gcc
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          brew install ${{ matrix.compiler }}
+
       - name: Build binary
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
@@ -61,15 +89,15 @@ jobs:
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: reduct-cli-${{ matrix.os }}
-          path: target/${{ matrix.target }}/release/reduct-cli${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          name: reduct-cli-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/reduct-cli${{ matrix.target == 'x86_64-pc-windows-gnu' && '.exe' || '' }}
 
 
   cli_tests:
     name: Client CLI Tests
     runs-on: ubuntu-latest
     needs:
-      - rust_fmt
+      - build
     strategy:
       matrix:
         reductstore_version: [ "latest", "main" ]
@@ -121,73 +149,76 @@ jobs:
       - build
       - cli_tests
       - check_tag # Only publish on tags
+    outputs:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
     name: Make release
-    if: ${{ startsWith(github.event.ref, 'refs/tags/v') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/create-release@v1
+      - uses: softprops/action-gh-release@v2
         id: create_release
         with:
           draft: true
           prerelease: false
-          release_name: Release ${{ steps.version.outputs.version }}
-          tag_name: ${{ github.ref }}
+          name: Release ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
           body: Copy changes from CHANGELOG.md
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
-      - name: Download Linux artifact
+  upload_release:
+    runs-on: ubuntu-latest
+    needs:
+      - make_release
+    name: Upload artifacts
+    if: ${{ startsWith(github.event.ref, 'refs/tags/v') }}
+    strategy:
+      matrix:
+        target: [
+          "x86_64-unknown-linux-gnu",
+          "aarch64-unknown-linux-gnu",
+          "x86_64-pc-windows-gnu",
+          "x86_64-apple-darwin",
+          "aarch64-apple-darwin",
+        ]
+    steps:
+      - uses: actions/checkout@v4
+
+
+      - name: Download ${{ matrix.target }} artifact
         uses: actions/download-artifact@v4
         with:
-          name: reduct-cli-ubuntu-latest
+          name: reduct-cli-${{ matrix.target }}
           path: /tmp/
-      - name: Load Linux image and get binary
+      - name: Archive binary for UNIX
+        if: ${{ matrix.target != 'x86_64-pc-windows-gnu' }}
         run: |
           cd /tmp
-          tar -czvf reduct-cli.linux-amd64.tar.gz reduct-cli
-      - name: Upload Linux artifact
+          tar -czvf reduct-cli.${{ matrix.target }}.tar.gz reduct-cli
+
+      - name: Archive binary for Windows
+        if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
+        run: |
+          cd /tmp
+          zip -o reduct-cli.${{ matrix.target }}.zip reduct-cli.exe
+
+
+      - name: Upload Linux Unix artifact
+        if: ${{ matrix.target != 'x86_64-pc-windows-gnu' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /tmp/reduct-cli.linux-amd64.tar.gz
-          asset_name: reduct-cli.linux-amd64.tar.gz
-          asset_content_type: application/gzip
-      - name: Download Macos artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: reduct-cli-macos-latest
-          path: /tmp/
-      - name: Archive MacOs binary
-        run: |
-          cd /tmp
-          tar -czvf reduct-cli.macos-amd64.tar.gz  reduct-cli
-      - name: Upload MacOs artifact
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /tmp/reduct-cli.macos-amd64.tar.gz
-          asset_name: reduct-cli.macos-amd64.tar.gz
+          upload_url: ${{ needs.make_release.outputs.upload_url }}
+          asset_path: /tmp/reduct-cli.${{ matrix.target }}.tar.gz
+          asset_name: reduct-cli.${{ matrix.target }}.tar.gz
           asset_content_type: application/gzip
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: reduct-cli-windows-latest
-          path: /tmp/
-      - name: Archive Windows binary
-        run: |
-          cd /tmp
-          zip -o reduct-cli.win-amd64.zip  reduct-cli.exe
       - name: Upload Windows artifact
+        if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
         uses: actions/upload-release-asset@v1
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /tmp/reduct-cli.win-amd64.zip
-          asset_name: reduct-cli.win-amd64.zip
+          upload_url: ${{ needs.make_release.outputs.upload_url }}
+          asset_path: /tmp/reduct-cli.${{ matrix.target }}.zip
+          asset_name: reduct-cli.${{ matrix.target }}.zip
           asset_content_type: application/zip

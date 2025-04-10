@@ -141,7 +141,7 @@ mod tests {
         assert_eq!(show_replica_handler(&context, &args).await.unwrap(), ());
         assert_eq!(context.stdout().history(), vec![
             "Name:                test_replica         Source Bucket:         test_bucket",
-            "Active:              false                Destination Bucket:    test_bucket_2",
+            "Active:              true                 Destination Bucket:    test_bucket_2",
             "Provisioned:         false                Destination Server:    http://localhost:8383",
             "Pending Records:     0                    Entries:               []",
             "Ok Records (hourly): 0                    Include:               {}",
