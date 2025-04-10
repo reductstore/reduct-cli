@@ -156,7 +156,7 @@ jobs:
         with:
           draft: true
           prerelease: false
-          release_name: Release ${{ steps.version.outputs.version }}
+          name: Release ${{ steps.version.outputs.version }}
           tag_name: ${{ github.ref }}
           body: Copy changes from CHANGELOG.md
         env:
