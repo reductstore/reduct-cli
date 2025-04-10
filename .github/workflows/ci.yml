@@ -36,13 +36,30 @@ jobs:
       - rust_fmt
     strategy:
       matrix:
+        target:
+          [
+            "x86_64-unknown-linux-gnu",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-pc-windows-gnu",
+            "x86_64-apple-darwin",
+            "aarch64-apple-darwin",
+          ]
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-          - os: macos-latest
-            target: x86_64-apple-darwin
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - target: "x86_64-unknown-linux-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc"
+          - target: "aarch64-unknown-linux-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc-aarch64-linux-gnu"
+          - target: "x86_64-pc-windows-gnu"
+            os: ubuntu-24.04
+            compiler: "gcc-mingw-w64-x86-64"
+          - target: "x86_64-apple-darwin"
+            os: macos-14
+            compiler: "gcc-x86_64-apple-darwin"
+          - target: "aarch64-apple-darwin"
+            os: macos-14
+            compiler: "gcc"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +69,17 @@ jobs:
         with:
           toolchain: ${{ env.MINIMAL_RUST_VERSION }}
           target: ${{ matrix.target }}
+
+      - name: Install gcc
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.compiler }}
+
+      - name: Install gcc
+        if: ${{ matrix.os == 'macos-latest' }}
+        run: |
+          brew install ${{ matrix.compiler }}
 
       - name: Build binary
         env:
