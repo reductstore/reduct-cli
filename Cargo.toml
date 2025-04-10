@@ -1,6 +1,6 @@
 [package]
 name = "reduct-cli"
-version = "0.7.0-test0"
+version = "0.7.0-test1"
 edition = "2021"
 authors = ["Alexey Timin <atimin@reduct.store>"]
 rust-version = "1.85.0"
