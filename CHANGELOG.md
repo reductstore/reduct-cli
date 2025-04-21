@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed:
 
 - RS-647: Build binaries for Linux and Macos ARM64, [PR-92](https://github.com/reductstore/reduct-cli/pull/92)
+- RS-661: use `T` instead of `t` argument for timeout, [PR-96](https://github.com/reductstore/reduct-cli/pull/96)
 
 ## [0.6.0] - 2025-03-18
 

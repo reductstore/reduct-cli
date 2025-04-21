@@ -41,7 +41,7 @@ fn cli() -> Command {
         .arg(
             Arg::new("timeout")
                 .long("timeout")
-                .short('t')
+                .short('T')
                 .value_name("SECONDS")
                 .help("Timeout for requests")
                 .value_parser(value_parser!(u64))
