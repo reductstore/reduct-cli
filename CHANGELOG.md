@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2025-05-07
+
 ### Changed:
 
 - RS-647: Build binaries for Linux and Macos ARM64, [PR-92](https://github.com/reductstore/reduct-cli/pull/92)
@@ -77,7 +79,9 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 - Moved from https://github.com/reductstore/reductstore
 
-[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.6.0...HEAD
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.6.1...HEAD
+
+[0.6.0]: https://github.com/reductstore/reduct-cli/compare/v0.6.0...v0.6.1
 
 [0.6.0]: https://github.com/reductstore/reduct-cli/compare/v0.5.0...v0.6.0
 
