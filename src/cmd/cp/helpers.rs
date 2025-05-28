@@ -127,6 +127,10 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
         query_builder = query_builder.when(when.clone());
     }
 
+    if let Some(ext) = &query_params.ext {
+        query_builder = query_builder.ext(ext.clone());
+    }
+
     query_builder = query_builder.include(query_params.include_labels.clone());
     query_builder = query_builder.exclude(query_params.exclude_labels.clone());
     query_builder = query_builder.strict(query_params.strict);

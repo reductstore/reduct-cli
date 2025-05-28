@@ -12,7 +12,7 @@ use crate::cmd::cp::b2f::cp_bucket_to_folder;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_ext_arg, make_include_arg,
     make_strict_arg, make_when_arg,
 };
 use crate::parse::ResourcePathParser;
@@ -80,6 +80,9 @@ pub(crate) fn cp_cmd() -> Command {
                 .help("Export the metadata of the records along with the records in JSON format.\nIf not specified, only the records will be exported.")
                 .required(false)
                 .action(SetTrue)
+        )
+        .arg(
+            make_ext_arg()
         )
 }
 

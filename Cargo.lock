@@ -1298,15 +1298,18 @@ dependencies = [
 
 [[package]]
 name = "reduct-base"
-version = "1.14.3"
+version = "1.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a28db8338cbb7d849fbde7ce3b20c803cd6d2e1f2f10882dc39068674cc85433"
+checksum = "00e592a0c330dd1ce8e996f432d3cb46371d943b03fa7ab9e8fb276b0ac0b2f5"
 dependencies = [
+ "bytes",
  "chrono",
  "http",
  "int-enum",
+ "log",
  "serde",
  "serde_json",
+ "thread-id",
  "url",
 ]
 
@@ -1341,9 +1344,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-rs"
-version = "1.14.0"
+version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6560c9f7ec5091ed048ea651362d3cbfce39651bef6ead408acc5856739fdf04"
+checksum = "95d9451cffe31bfb06267a3cee90f7df773c57273755d28205ca03a345cdacf8"
 dependencies = [
  "async-channel",
  "async-stream",
@@ -1597,6 +1600,7 @@ version = "1.0.140"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
 dependencies = [
+ "indexmap",
  "itoa",
  "memchr",
  "ryu",
@@ -1811,6 +1815,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.90",
+]
+
+[[package]]
+name = "thread-id"
+version = "5.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99043e46c5a15af379c06add30d9c93a6c0e8849de00d244c4a2c417da128d80"
+dependencies = [
+ "libc",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

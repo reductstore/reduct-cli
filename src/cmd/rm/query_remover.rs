@@ -90,6 +90,7 @@ mod tests {
             ttl: Default::default(),
             when: None,
             strict: false,
+            ext: None,
         };
 
         let query_remover = QueryRemover::new(bucket, query_params);
