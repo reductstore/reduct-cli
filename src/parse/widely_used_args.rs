@@ -76,6 +76,15 @@ pub(crate) fn make_strict_arg() -> Arg {
         .required(false)
 }
 
+pub(crate) fn make_ext_arg() -> Arg {
+    Arg::new("ext-params")
+        .long("ext-params")
+        .short('X')
+        .value_name("EXT_PARAMETERS")
+        .help("Pass additional parameters to extensions in JSON format.")
+        .required(false)
+}
+
 pub(crate) fn parse_label(label: &str) -> anyhow::Result<(String, String)> {
     let mut label = label.splitn(2, '=');
     Ok((

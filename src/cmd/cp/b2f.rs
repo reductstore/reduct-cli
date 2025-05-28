@@ -234,7 +234,7 @@ mod tests {
         #[fixture]
         fn visitor() -> CopyToFolderVisitor {
             CopyToFolderVisitor {
-                dst_folder: tempdir().unwrap().into_path(),
+                dst_folder: tempdir().unwrap().keep(),
                 ext: None,
                 with_meta: false,
             }
@@ -266,7 +266,7 @@ mod tests {
             .await
             .unwrap();
 
-        let path = tempdir().unwrap().into_path();
+        let path = tempdir().unwrap().keep();
         let args = cp_cmd()
             .try_get_matches_from(vec![
                 "cp",

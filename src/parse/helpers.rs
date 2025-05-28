@@ -6,6 +6,7 @@
 use crate::context::CliContext;
 use crate::parse::widely_used_args::parse_label_args;
 use chrono::DateTime;
+use clap::parser::MatchesError;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, EntryInfo, Labels};
 use serde_json::Value;
@@ -69,6 +70,7 @@ pub(crate) struct QueryParams {
     pub ttl: Duration,
     pub when: Option<Value>,
     pub strict: bool,
+    pub ext: Option<Value>,
 }
 
 impl Default for QueryParams {
@@ -86,6 +88,7 @@ impl Default for QueryParams {
             ttl: Duration::from_secs(60),
             when: None,
             strict: false,
+            ext: None,
         }
     }
 }
@@ -102,6 +105,11 @@ pub(crate) fn parse_query_params(
     let each_s = args.get_one::<f64>("each-s").map(|s| *s);
     let when = args.get_one::<String>("when").map(|s| s.to_string());
     let strict = args.get_one::<bool>("strict").unwrap_or(&false);
+    let ext_params = match args.try_get_one::<String>("ext-params") {
+        Ok(s) => s.cloned(),
+        Err(MatchesError::UnknownArgument { .. }) => None, // ext-params is optional for some commands
+        Err(err) => return Err(anyhow::anyhow!("Failed to parse ext-params: {}", err)),
+    };
 
     // arguments aren't used in all cases
     let limit = args
@@ -127,6 +135,17 @@ pub(crate) fn parse_query_params(
         None => None,
     };
 
+    let ext_json = match ext_params {
+        Some(params) => {
+            let ext_json = match serde_json::from_str(&params) {
+                Ok(json) => json,
+                Err(err) => return Err(anyhow::anyhow!("Failed to parse ext-params: {}", err)),
+            };
+            Some(Value::Object(ext_json))
+        }
+        None => None,
+    };
+
     Ok(QueryParams {
         start,
         stop,
@@ -140,6 +159,7 @@ pub(crate) fn parse_query_params(
         ttl: ctx.timeout() * ctx.parallel() as u32,
         when: json_when,
         strict: *strict,
+        ext: ext_json,
     })
 }
 

@@ -13,7 +13,7 @@ documentation = "https://reduct.store/docs/guides"
 description = "A CLI client for ReductStore written in Rust"
 
 [dependencies]
-reduct-rs = "1.14.0"
+reduct-rs = "1.15.0"
 clap = { version = "4.5.38", features = ["cargo"] }
 dirs = "6.0.0"
 toml = "0.8.22"

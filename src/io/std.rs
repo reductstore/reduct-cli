@@ -35,35 +35,3 @@ macro_rules! output {
 }
 
 pub(crate) use output;
-
-pub(crate) trait Input {
-    fn read(&self) -> Result<String, anyhow::Error>;
-
-    #[cfg(test)]
-    fn emulate(&self, input: Vec<&'static str>);
-}
-
-pub(crate) struct StdInput;
-
-impl StdInput {
-    pub(crate) fn new() -> Self {
-        StdInput {}
-    }
-}
-
-impl Input for StdInput {
-    fn read(&self) -> Result<String, anyhow::Error> {
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        Ok(input.trim().to_string())
-    }
-
-    #[cfg(test)]
-    fn emulate(&self, _input: Vec<&'static str>) {}
-}
-
-macro_rules! input {
-    ($ctx:expr) => {
-        $ctx.stdin().read()
-    };
-}

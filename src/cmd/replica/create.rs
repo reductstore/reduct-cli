@@ -98,7 +98,7 @@ pub(super) async fn create_replica(
 mod tests {
     use super::*;
     use crate::context::tests::{bucket, bucket2, context, replica};
-    use reduct_rs::JsonValue;
+
     use rstest::rstest;
     use serde_json::json;
 

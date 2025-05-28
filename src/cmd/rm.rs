@@ -58,7 +58,7 @@ pub(crate) fn rm_cmd() -> Command {
         .arg(
             Arg::new("time")
                 .long("time")
-                .short('T')
+                .short('t')
                 .value_name("TIMESTAMP")
                 .help("Remove a record with a certain timestamp in ISO format or Unix timestamp in microseconds.")
                 .required(false)
