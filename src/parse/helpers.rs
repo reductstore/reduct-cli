@@ -10,7 +10,6 @@ use clap::parser::MatchesError;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, EntryInfo, Labels};
 use serde_json::Value;
-use std::str::Matches;
 use std::time::Duration;
 
 pub(crate) async fn fetch_and_filter_entries(

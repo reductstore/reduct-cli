@@ -3,7 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::io::std::{Input, Output, StdInput, StdOutput};
+use crate::io::std::{Output, StdOutput};
 use dirs::home_dir;
 use std::env::current_dir;
 use std::time::Duration;
@@ -11,7 +11,6 @@ use std::time::Duration;
 pub(crate) struct CliContext {
     config_path: String,
     output: Box<dyn Output>,
-    input: Box<dyn Input>,
     ignore_ssl: bool,
     timeout: Duration,
     parallel: usize,
@@ -23,10 +22,6 @@ impl CliContext {
     }
     pub(crate) fn stdout(&self) -> &dyn Output {
         &*self.output
-    }
-
-    pub(crate) fn stdin(&self) -> &dyn Input {
-        &*self.input
     }
 
     pub(crate) fn ignore_ssl(&self) -> bool {
@@ -51,7 +46,6 @@ impl ContextBuilder {
         let mut config = CliContext {
             config_path: String::new(),
             output: Box::new(StdOutput::new()),
-            input: Box::new(StdInput::new()),
             ignore_ssl: false,
             timeout: Duration::from_secs(30),
             parallel: 10,
@@ -80,12 +74,6 @@ impl ContextBuilder {
     #[allow(dead_code)]
     pub(crate) fn output(mut self, output: Box<dyn Output>) -> Self {
         self.config.output = output;
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn input(mut self, input: Box<dyn Input>) -> Self {
-        self.config.input = input;
         self
     }
 
@@ -142,37 +130,9 @@ pub(crate) mod tests {
         }
     }
 
-    pub struct MockInput {
-        input: RefCell<Vec<String>>,
-    }
-
-    impl Input for MockInput {
-        fn read(&self) -> Result<String, anyhow::Error> {
-            Ok(self.input.borrow_mut().pop().unwrap())
-        }
-
-        fn emulate(&self, input: Vec<&'static str>) {
-            self.input
-                .replace(input.iter().map(|s| s.to_string()).collect());
-        }
-    }
-
-    impl MockInput {
-        pub fn new() -> Self {
-            MockInput {
-                input: RefCell::new(Vec::new()),
-            }
-        }
-    }
-
     #[fixture]
     pub(crate) fn output() -> Box<MockOutput> {
         Box::new(MockOutput::new())
-    }
-
-    #[fixture]
-    pub(crate) fn input() -> Box<MockInput> {
-        Box::new(MockInput::new())
     }
 
     #[fixture]
@@ -181,16 +141,11 @@ pub(crate) mod tests {
     }
 
     #[fixture]
-    pub(crate) fn context(
-        output: Box<dyn Output>,
-        input: Box<dyn Input>,
-        current_token: String,
-    ) -> CliContext {
+    pub(crate) fn context(output: Box<dyn Output>, current_token: String) -> CliContext {
         let tmp_dir = tempdir().unwrap();
         let ctx = ContextBuilder::new()
-            .config_path(tmp_dir.into_path().join("config.toml").to_str().unwrap())
+            .config_path(tmp_dir.keep().join("config.toml").to_str().unwrap())
             .output(output)
-            .input(input)
             .build();
 
         // add a default alias
