@@ -7,12 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes:
+
+- Use `-t` instead of `-T` for the `--time` flag in `reduct-cli rm` command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
+
+
+### Added:
+
+- Add `--ext-params` flag to copy command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
+
 ## [0.6.1] - 2025-05-07
+
+### Breaking changes:
+
+- RS-661: use `-T` instead of `-t` argument for timeout, [PR-96](https://github.com/reductstore/reduct-cli/pull/96)
 
 ### Changed:
 
 - RS-647: Build binaries for Linux and Macos ARM64, [PR-92](https://github.com/reductstore/reduct-cli/pull/92)
-- RS-661: use `T` instead of `t` argument for timeout, [PR-96](https://github.com/reductstore/reduct-cli/pull/96)
 
 ## [0.6.0] - 2025-03-18
 
