@@ -121,7 +121,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_client(context: CliContext, current_token: String) {
         let client = build_client(&context, "local").await.unwrap();
-        assert_eq!(client.url(), "http://localhost:8383");
+        assert_eq!(client.url(), "http://localhost:8383/");
         assert_eq!(client.api_token(), current_token);
     }
 
@@ -147,7 +147,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(client.url(), "http://localhost:8383");
+        assert_eq!(client.url(), "http://localhost:8383/");
         assert_eq!(client.api_token(), current_token);
     }
 
