@@ -7,14 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
 ### Breaking changes:
 
 - Use `-t` instead of `-T` for the `--time` flag in `reduct-cli rm` command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
 
-
 ### Added:
 
 - Add `--ext-params` flag to copy command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
+
+### Fixed:
+
+- Update reduct-rs up to 1.15.2, [PR-114](https://github.com/reductstore/reduct-cli/pull/114)
 
 ## [0.6.1] - 2025-05-07
 
