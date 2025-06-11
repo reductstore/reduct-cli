@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added:
 
 - Add `--ext-params` flag to copy command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
+- Add MCAP and other well know types, [PR-115](https://github.com/reductstore/reduct-cli/pull/115)
 
 ### Fixed:
 
