@@ -90,12 +90,11 @@ impl CopyVisitor for CopyToFolderVisitor {
 impl CopyToFolderVisitor {
     fn guess_extension(record: &Record) -> String {
         if let Some((top, sub)) = record.content_type().split_once('/') {
-            if let Some(ext) = get_extensions(top, sub) {
-                if let Some(well_known) = Self::well_known_ext(top, sub) {
-                    well_known.to_string()
-                } else {
-                    ext.first().unwrap_or(&"bin").to_string()
-                }
+            if let Some(well_known) = Self::well_known_ext(top, sub) {
+                well_known.to_string()
+            } else if let Some(ext) = get_extensions(top, sub) {
+                ext.first()
+                    .map_or_else(|| "bin".to_string(), |e| e.to_string())
             } else {
                 "bin".to_string()
             }
@@ -110,9 +109,14 @@ impl CopyToFolderVisitor {
             ("text", "html") => Some("html"),
             ("text", "markdown") => Some("md"),
             ("text", "plain") => Some("txt"),
+            ("text", "csv") => Some("csv"),
+            ("application", "json") => Some("json"),
+            ("application", "xml") => Some("xml"),
+            ("application", "pdf") => Some("pdf"),
+            ("application", "csv") => Some("csv"),
+            ("application", "mcap") => Some("mcap"),
             ("image", "jpeg") => Some("jpg"),
             ("image", "png") => Some("png"),
-
             _ => None,
         }
     }
@@ -290,8 +294,15 @@ mod tests {
     #[case("text/html", "html")]
     #[case("text/markdown", "md")]
     #[case("text/plain", "txt")]
+    #[case("text/csv", "csv")]
+    #[case("application/json", "json")]
+    #[case("application/xml", "xml")]
+    #[case("application/pdf", "pdf")]
+    #[case("application/csv", "csv")]
+    #[case("application/mcap", "mcap")]
     #[case("image/jpeg", "jpg")]
     #[case("image/png", "png")]
+    #[case("image/gif", "gif")]
     fn test_guess_extension(#[case] content_type: &str, #[case] ext: &str) {
         let record = RecordBuilder::new()
             .content_type(content_type.to_string())
