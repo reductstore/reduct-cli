@@ -8,6 +8,7 @@ license = "MPL-2.0"
 keywords = ["database", "time-series", "blob", "storage", "reductstore"]
 categories = ["command-line-utilities", "database"]
 homepage = "https://reduct.store"
+repository = "https://github.com/reductstore/reduct-cli"
 documentation = "https://reduct.store/docs/guides"
 
 description = "A CLI client for ReductStore written in Rust"
