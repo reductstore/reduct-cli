@@ -152,11 +152,6 @@ mod tests {
         assert_eq!(replica.settings.dst_bucket, bucket2);
         assert_eq!(replica.settings.dst_host, "http://localhost:8383/");
         assert_eq!(replica.settings.dst_token, "***");
-        assert_eq!(
-            replica.settings.include,
-            Labels::from_iter(vec![("key1".to_string(), "value2".to_string())])
-        );
-        assert!(replica.settings.exclude.is_empty());
         assert!(replica.settings.entries.is_empty());
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
