@@ -6,9 +6,7 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_when_arg,
-};
+use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
 use crate::parse::ResourcePathParser;
 
 use clap::{Arg, ArgMatches, Command};
@@ -76,7 +74,7 @@ fn update_replication_settings(
     let entries_filter = args
         .get_many::<String>("entries")
         .map(|s| s.map(|s| s.to_string()).collect::<Vec<String>>());
-    
+
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
     let when = args.get_one::<String>("when");

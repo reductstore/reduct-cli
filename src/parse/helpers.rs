@@ -212,7 +212,6 @@ mod test {
             assert_eq!(query_params.start, Some(1672531200000000));
             assert_eq!(query_params.stop, Some(1672617600000000));
         }
-        
 
         #[rstest]
         fn parse_each_n(context: CliContext) {

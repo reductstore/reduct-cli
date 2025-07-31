@@ -12,8 +12,7 @@ use crate::cmd::cp::b2f::cp_bucket_to_folder;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_ext_arg,
-    make_strict_arg, make_when_arg,
+    make_each_n, make_each_s, make_entries_arg, make_ext_arg, make_strict_arg, make_when_arg,
 };
 use crate::parse::ResourcePathParser;
 use clap::ArgAction::SetTrue;

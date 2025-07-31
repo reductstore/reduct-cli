@@ -12,8 +12,7 @@ use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg,
-    make_strict_arg, make_when_arg,
+    make_each_n, make_each_s, make_entries_arg, make_strict_arg, make_when_arg,
 };
 use crate::parse::{fetch_and_filter_entries, parse_query_params, QueryParams, ResourcePathParser};
 use async_trait::async_trait;

@@ -130,7 +130,7 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
     if let Some(ext) = &query_params.ext {
         query_builder = query_builder.ext(ext.clone());
     }
-    
+
     query_builder = query_builder.strict(query_params.strict);
 
     if let Some(limit) = query_params.limit {
