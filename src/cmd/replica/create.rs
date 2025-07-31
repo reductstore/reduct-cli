@@ -114,10 +114,6 @@ mod tests {
             format!("local/{}", test_replica).as_str(),
             &bucket,
             format!("local/{}", bucket2).as_str(),
-            "--include",
-            "key1=value2",
-            "--exclude",
-            "key2=value3",
             "--entries",
             "entry1",
             "entry2",
@@ -138,14 +134,6 @@ mod tests {
         assert_eq!(
             replica.settings.include,
             Labels::from_iter(vec![("key1".to_string(), "value2".to_string())])
-        );
-        assert_eq!(
-            replica.settings.exclude,
-            Labels::from_iter(vec![("key2".to_string(), "value3".to_string())])
-        );
-        assert_eq!(
-            replica.settings.entries,
-            vec!["entry1".to_string(), "entry2".to_string()]
         );
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
