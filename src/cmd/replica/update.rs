@@ -136,8 +136,6 @@ mod tests {
                 "update",
                 format!("local/{}", test_replica).as_str(),
                 format!("local/{}", &bucket2).as_str(),
-                "--include",
-                "key1=value2",
                 "--each-n",
                 "10",
                 "--each-s",
