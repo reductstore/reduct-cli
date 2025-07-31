@@ -6,10 +6,7 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
-    parse_label_args,
-};
+use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
 use crate::parse::ResourcePathParser;
 
 use clap::{Arg, ArgMatches, Command};
@@ -38,8 +35,6 @@ pub(super) fn update_replica_cmd() -> Command {
                 .help("Source bucket on the replicated instance")
                 .required(false),
         )
-        .arg(make_include_arg())
-        .arg(make_exclude_arg())
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
@@ -80,8 +75,6 @@ fn update_replication_settings(
         .get_many::<String>("entries")
         .map(|s| s.map(|s| s.to_string()).collect::<Vec<String>>());
 
-    let include = parse_label_args(args.get_many::<String>("include"))?;
-    let exclude = parse_label_args(args.get_many::<String>("exclude"))?;
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
     let when = args.get_one::<String>("when");
@@ -93,14 +86,6 @@ fn update_replication_settings(
 
     if let Some(source_bucket_name) = source_bucket_name {
         current_settings.src_bucket = source_bucket_name.clone();
-    }
-
-    if let Some(include) = include {
-        current_settings.include = include;
-    }
-
-    if let Some(exclude) = exclude {
-        current_settings.exclude = exclude;
     }
 
     if let Some(entries_filter) = entries_filter {
@@ -151,8 +136,6 @@ mod tests {
                 "update",
                 format!("local/{}", test_replica).as_str(),
                 format!("local/{}", &bucket2).as_str(),
-                "--include",
-                "key1=value2",
                 "--each-n",
                 "10",
                 "--each-s",
@@ -167,11 +150,6 @@ mod tests {
         assert_eq!(replica.settings.dst_bucket, bucket2);
         assert_eq!(replica.settings.dst_host, "http://localhost:8383/");
         assert_eq!(replica.settings.dst_token, "***");
-        assert_eq!(
-            replica.settings.include,
-            Labels::from_iter(vec![("key1".to_string(), "value2".to_string())])
-        );
-        assert!(replica.settings.exclude.is_empty());
         assert!(replica.settings.entries.is_empty());
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));

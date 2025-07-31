@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes:
+
+- Remove include/exclude options from `reduct-cli cp` and `reduct-cli replica` commands, [PR-122](https://github.com/reductstore/reduct-cli/pull/122)
+
 ## [0.7.0] - 2025-06-11
 
 ### Breaking changes:

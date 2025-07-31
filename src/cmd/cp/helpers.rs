@@ -131,8 +131,6 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
         query_builder = query_builder.ext(ext.clone());
     }
 
-    query_builder = query_builder.include(query_params.include_labels.clone());
-    query_builder = query_builder.exclude(query_params.exclude_labels.clone());
     query_builder = query_builder.strict(query_params.strict);
 
     if let Some(limit) = query_params.limit {
@@ -453,63 +451,6 @@ mod tests {
 
             let params = QueryParams {
                 limit: Some(1),
-                ..Default::default()
-            };
-
-            start_loading(src_bucket, params, visitor).await.unwrap();
-        }
-
-        #[rstest]
-        #[tokio::test]
-        async fn test_downloading_include(#[future] src_bucket: Bucket, mut visitor: MockVisitor) {
-            let src_bucket = src_bucket.await;
-            visitor
-                .expect_visit()
-                .times(1)
-                .with(eq("entry-1"), always())
-                .return_const(Ok(()));
-
-            src_bucket
-                .write_record("entry-1")
-                .data(Bytes::from_static(b"rec-3"))
-                .add_label("key1", "value1")
-                .send()
-                .await
-                .unwrap();
-
-            let params = QueryParams {
-                include_labels: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
-                ..Default::default()
-            };
-
-            start_loading(src_bucket, params, visitor).await.unwrap();
-        }
-
-        #[rstest]
-        #[tokio::test]
-        async fn test_downloading_exclude(#[future] src_bucket: Bucket, mut visitor: MockVisitor) {
-            let src_bucket = src_bucket.await;
-            visitor
-                .expect_visit()
-                .times(1)
-                .with(eq("entry-1"), always())
-                .return_const(Ok(()));
-            visitor
-                .expect_visit()
-                .times(1)
-                .with(eq("entry-2"), always())
-                .return_const(Ok(()));
-
-            src_bucket
-                .write_record("entry-1")
-                .data(Bytes::from_static(b"rec-3"))
-                .add_label("key1", "value1")
-                .send()
-                .await
-                .unwrap();
-
-            let params = QueryParams {
-                exclude_labels: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
                 ..Default::default()
             };
 

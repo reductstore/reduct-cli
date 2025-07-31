@@ -49,9 +49,6 @@ impl QueryRemover {
             query_builder = query_builder.each_s(each_s);
         }
 
-        query_builder = query_builder.include(self.query_params.include_labels.clone());
-        query_builder = query_builder.exclude(self.query_params.exclude_labels.clone());
-
         if let Some(when) = &self.query_params.when {
             query_builder = query_builder.when(when.clone());
         }
@@ -85,8 +82,6 @@ mod tests {
             limit: None,
             entry_filter: vec![],
             parallel: 0,
-            include_labels: HashMap::new(),
-            exclude_labels: HashMap::new(),
             ttl: Default::default(),
             when: None,
             strict: false,

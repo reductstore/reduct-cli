@@ -4,7 +4,6 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::context::CliContext;
-use crate::parse::widely_used_args::parse_label_args;
 use chrono::DateTime;
 use clap::parser::MatchesError;
 use clap::ArgMatches;
@@ -60,8 +59,6 @@ pub(crate) fn parse_time(time_str: Option<&String>) -> anyhow::Result<Option<u64
 pub(crate) struct QueryParams {
     pub start: Option<u64>,
     pub stop: Option<u64>,
-    pub include_labels: Labels,
-    pub exclude_labels: Labels,
     pub each_n: Option<u64>,
     pub each_s: Option<f64>,
     pub limit: Option<u64>,
@@ -78,8 +75,6 @@ impl Default for QueryParams {
         Self {
             start: None,
             stop: None,
-            include_labels: Labels::new(),
-            exclude_labels: Labels::new(),
             each_n: None,
             each_s: None,
             limit: None,
@@ -99,8 +94,6 @@ pub(crate) fn parse_query_params(
 ) -> anyhow::Result<QueryParams> {
     let start = parse_time(args.get_one::<String>("start"))?;
     let stop = parse_time(args.get_one::<String>("stop"))?;
-    let include_labels = parse_label_args(args.get_many::<String>("include"))?.unwrap_or_default();
-    let exclude_labels = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
     let each_n = args.get_one::<u64>("each-n").map(|n| *n);
     let each_s = args.get_one::<f64>("each-s").map(|s| *s);
     let when = args.get_one::<String>("when").map(|s| s.to_string());
@@ -149,8 +142,6 @@ pub(crate) fn parse_query_params(
     Ok(QueryParams {
         start,
         stop,
-        include_labels,
-        exclude_labels,
         each_n,
         each_s,
         limit,
@@ -220,39 +211,6 @@ mod test {
 
             assert_eq!(query_params.start, Some(1672531200000000));
             assert_eq!(query_params.stop, Some(1672617600000000));
-        }
-
-        #[rstest]
-        fn parse_include_exclude(context: CliContext) {
-            let args = cp_cmd()
-                .try_get_matches_from(vec![
-                    "cp",
-                    "serv/buck1",
-                    "serv/buck2",
-                    "--include",
-                    "key1=value1",
-                    "key2=value2",
-                    "--exclude",
-                    "key3=value3",
-                    "key4=value4",
-                ])
-                .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
-
-            assert_eq!(
-                query_params.include_labels,
-                Labels::from_iter(vec![
-                    ("key1".to_string(), "value1".to_string()),
-                    ("key2".to_string(), "value2".to_string()),
-                ])
-            );
-            assert_eq!(
-                query_params.exclude_labels,
-                Labels::from_iter(vec![
-                    ("key3".to_string(), "value3".to_string()),
-                    ("key4".to_string(), "value4".to_string()),
-                ])
-            );
         }
 
         #[rstest]

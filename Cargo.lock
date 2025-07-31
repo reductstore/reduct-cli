@@ -360,7 +360,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1309,12 +1309,13 @@ dependencies = [
 
 [[package]]
 name = "reduct-base"
-version = "1.15.5"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43fe6b776c68f167cb57cc5bccbc721f8bc0e7d8e40effbff88777299f10629f"
+checksum = "bf3d9c57357d075dc6d19007e1c99c4b726b224d17e12d6f38b8fc91eff287e3"
 dependencies = [
  "bytes",
  "chrono",
+ "futures",
  "http",
  "int-enum",
  "log",
@@ -1355,9 +1356,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-rs"
-version = "1.15.2"
+version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0010333f89a4a2b900c8b28c8e0eb36fda06113df3acbc0f7bed3c4e2914fae1"
+checksum = "c13226b10b6306c48a1ca7b920ba81195d21bb56bfa4d8465bec30d513233c68"
 dependencies = [
  "async-channel",
  "async-stream",
@@ -1607,9 +1608,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.140"
+version = "1.0.141"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20068b6e96dc6c9bd23e01df8827e6c7e1f2fddd43c21810382803c136b99373"
+checksum = "30b9eff21ebe718216c6ec64e1d9ac57087aad11efc64e32002bce4a0d4c03d3"
 dependencies = [
  "indexmap",
  "itoa",
