@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.8.0] - 2025-08-31
+
 ### Breaking changes:
 
 - Remove include/exclude options from `reduct-cli cp` and `reduct-cli replica` commands, [PR-122](https://github.com/reductstore/reduct-cli/pull/122)
@@ -101,9 +104,13 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 - Moved from https://github.com/reductstore/reductstore
 
-[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.6.1...HEAD
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.8.0...HEAD
 
-[0.6.0]: https://github.com/reductstore/reduct-cli/compare/v0.6.0...v0.6.1
+[0.8.0]: https://github.com/reductstore/reduct-cli/compare/v0.7.0...v0.8.0
+
+[0.7.0]: https://github.com/reductstore/reduct-cli/compare/v0.6.1...v0.7.0
+
+[0.6.1]: https://github.com/reductstore/reduct-cli/compare/v0.6.0...v0.6.1
 
 [0.6.0]: https://github.com/reductstore/reduct-cli/compare/v0.5.0...v0.6.0
 
