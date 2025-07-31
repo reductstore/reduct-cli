@@ -6,8 +6,7 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
-    parse_label_args,
+    make_each_n, make_each_s, make_entries_arg, make_when_arg,
 };
 use crate::parse::ResourcePathParser;
 use clap::{Arg, Command};
@@ -34,8 +33,6 @@ pub(super) fn create_replica_cmd() -> Command {
                 .value_parser(ResourcePathParser::new())
                 .required(true),
         )
-        .arg(make_include_arg())
-        .arg(make_exclude_arg())
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
@@ -59,8 +56,7 @@ pub(super) async fn create_replica(
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
-    let include = parse_label_args(args.get_many::<String>("include"))?.unwrap_or_default();
-    let exclude = parse_label_args(args.get_many::<String>("exclude"))?.unwrap_or_default();
+
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
     let when = args.get_one::<String>("when");
@@ -74,8 +70,6 @@ pub(super) async fn create_replica(
         .dst_bucket(dest_bucket_name)
         .dst_host(dest_url.as_str())
         .dst_token(&token)
-        .include(Labels::from_iter(include))
-        .exclude(Labels::from_iter(exclude))
         .entries(entries_filter);
 
     if let Some(when) = when {

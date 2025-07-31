@@ -7,8 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg, make_when_arg,
-    parse_label_args,
+    make_each_n, make_each_s, make_entries_arg, make_when_arg,
 };
 use crate::parse::ResourcePathParser;
 
@@ -38,8 +37,6 @@ pub(super) fn update_replica_cmd() -> Command {
                 .help("Source bucket on the replicated instance")
                 .required(false),
         )
-        .arg(make_include_arg())
-        .arg(make_exclude_arg())
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
@@ -79,9 +76,7 @@ fn update_replication_settings(
     let entries_filter = args
         .get_many::<String>("entries")
         .map(|s| s.map(|s| s.to_string()).collect::<Vec<String>>());
-
-    let include = parse_label_args(args.get_many::<String>("include"))?;
-    let exclude = parse_label_args(args.get_many::<String>("exclude"))?;
+    
     let each_n = args.get_one::<u64>("each-n");
     let each_s = args.get_one::<f64>("each-s");
     let when = args.get_one::<String>("when");
@@ -93,14 +88,6 @@ fn update_replication_settings(
 
     if let Some(source_bucket_name) = source_bucket_name {
         current_settings.src_bucket = source_bucket_name.clone();
-    }
-
-    if let Some(include) = include {
-        current_settings.include = include;
-    }
-
-    if let Some(exclude) = exclude {
-        current_settings.exclude = exclude;
     }
 
     if let Some(entries_filter) = entries_filter {

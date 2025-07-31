@@ -12,7 +12,7 @@ use crate::cmd::cp::b2f::cp_bucket_to_folder;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_ext_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg, make_ext_arg,
     make_strict_arg, make_when_arg,
 };
 use crate::parse::ResourcePathParser;
@@ -49,8 +49,6 @@ pub(crate) fn cp_cmd() -> Command {
                 .help("Export records with timestamps newer than this time point in ISO format or Unix timestamp in microseconds.\nIf not specified, the export will end at the last record in an entry.")
                 .required(false)
         )
-        .arg(make_include_arg())
-        .arg(make_exclude_arg())
         .arg(make_entries_arg())
         .arg(make_when_arg())
         .arg(make_strict_arg())

@@ -12,7 +12,7 @@ use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{
-    make_each_n, make_each_s, make_entries_arg, make_exclude_arg, make_include_arg,
+    make_each_n, make_each_s, make_entries_arg,
     make_strict_arg, make_when_arg,
 };
 use crate::parse::{fetch_and_filter_entries, parse_query_params, QueryParams, ResourcePathParser};
@@ -48,8 +48,6 @@ pub(crate) fn rm_cmd() -> Command {
                 .help("Remove records with timestamps newer than this time point in ISO format or Unix timestamp in microseconds.\nIf not specified, the export will end at the last record in an entry.")
                 .required(false)
         )
-        .arg(make_include_arg())
-        .arg(make_exclude_arg())
         .arg(make_entries_arg())
         .arg(make_each_n())
         .arg(make_each_s())
