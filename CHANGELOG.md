@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.9.0] - 2025-08-26
+
 ### Added
 
 - Add attempts to `reduct-cli cp` command to recover after errors, [PR-132](https://github.com/reductstore/reduct-cli/pull/132)
 
-## [0.8.0] - 2025-08-31
+## [0.8.0] - 2025-07-31
 
 ### Breaking changes:
 
