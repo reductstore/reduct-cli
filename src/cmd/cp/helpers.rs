@@ -15,6 +15,8 @@ use tokio::time::{sleep, Instant};
 
 use crate::parse::{fetch_and_filter_entries, QueryParams};
 
+const DOWNLOAD_ATTEMPTS: u8 = 10;
+
 pub(super) struct TransferProgress {
     entry: EntryInfo,
     transferred_bytes: u64,
@@ -79,6 +81,10 @@ impl TransferProgress {
     pub(crate) fn print_error(&self, err: String) {
         self.progress_bar.set_message(format!("{}", err));
         self.progress_bar.abandon();
+    }
+
+    pub(crate) fn print_warning(&self, warning: String) {
+        self.progress_bar.set_message(format!("{}", warning));
     }
 
     pub(crate) fn done(&self) {
@@ -170,55 +176,104 @@ where
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
 
     let visitor = Arc::new(visitor);
+    let src_bucket = Arc::new(src_bucket);
+
     for entry in entries {
-        let query_builder = build_query(&src_bucket, &entry, &query_params);
         let local_sem = Arc::clone(&semaphore);
         let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
 
         let local_visitor = Arc::clone(&visitor);
+        let mut params = query_params.clone();
+        let bucket = Arc::clone(&src_bucket);
+        let mut timestamp = params.start.unwrap_or(entry.oldest_record);
+        let mut record_count = 0;
         tasks.spawn(async move {
-            macro_rules! print_error_progress {
-                ($err:expr) => {{
-                    transfer_progress.print_error($err.to_string());
-                    Err($err)
-                }};
-            }
-            let _permit = local_sem.acquire().await.unwrap();
+            let mut attempts = DOWNLOAD_ATTEMPTS;
+            while attempts > 0 {
+                let query_builder = build_query(&bucket, &entry, &params);
 
-            let record_stream = match query_builder.send().await {
-                Ok(stream) => stream,
-                Err(err) => {
-                    return print_error_progress!(err);
-                }
-            };
-
-            tokio::pin!(record_stream);
-
-            while let Some(record) = record_stream.next().await {
-                if let Err(err) = record {
-                    return print_error_progress!(err);
+                macro_rules! print_error_progress {
+                    ($err:expr) => {{
+                        transfer_progress.print_error($err.to_string());
+                        Err($err)
+                    }};
                 }
 
-                let record = record?;
-                let timestamp = record.timestamp_us();
+                // Decrement attempts and retry on failure
+                // and start from the last timestamp
+                // we also need to adjust the limit if we have one
+                macro_rules! make_attempt {
+                    ($err:expr) => {{
+                        attempts -= 1;
+                        if attempts == 0 {
+                            print_error_progress!($err)
+                        } else {
+                            params.start = Some(timestamp);
+                            if params.limit.is_some() {
+                                // if we have a limit, we need to reset it on retry
+                                params.limit =
+                                    Some(params.limit.unwrap().saturating_sub(record_count));
+                            }
+                            transfer_progress.print_warning(format!(
+                                "{}. Retrying... (attempts {} / {})",
+                                $err, attempts, DOWNLOAD_ATTEMPTS
+                            ));
 
-                let content_length = record.content_length() as u64;
-                let result = local_visitor.visit(&entry.name, record).await;
+                            sleep(Duration::from_secs(1)).await;
+                            Ok(())
+                        }
+                    }};
+                }
+                let _permit = local_sem.acquire().await.unwrap();
 
-                if let Err(err) = result {
-                    // ignore conflict errors
-                    if err.status() != ErrorCode::Conflict {
-                        return print_error_progress!(err);
+                let record_stream = match query_builder.send().await {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        if let Err(e) = make_attempt!(err) {
+                            return Err(e);
+                        } else {
+                            continue;
+                        }
                     }
+                };
+
+                tokio::pin!(record_stream);
+
+                while let Some(record) = record_stream.next().await {
+                    if let Err(err) = record {
+                        if let Err(e) = make_attempt!(err) {
+                            return Err(e);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let record = record?;
+                    timestamp = record.timestamp_us();
+                    record_count += 1;
+
+                    let content_length = record.content_length() as u64;
+                    let result = local_visitor.visit(&entry.name, record).await;
+
+                    if let Err(err) = result {
+                        // ignore conflict errors
+                        if err.status() != ErrorCode::Conflict {
+                            return print_error_progress!(err);
+                        }
+                    }
+
+                    transfer_progress.update(timestamp, content_length);
+                    sleep(Duration::from_micros(5)).await;
+                    attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
                 }
 
-                transfer_progress.update(timestamp, content_length);
-                sleep(Duration::from_micros(5)).await;
+                if attempts == DOWNLOAD_ATTEMPTS {
+                    transfer_progress.done();
+                    break;
+                }
             }
 
-            transfer_progress.done();
-
-            Ok(())
+            return Ok(());
         });
     }
 

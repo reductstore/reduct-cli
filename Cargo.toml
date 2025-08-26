@@ -14,7 +14,7 @@ documentation = "https://reduct.store/docs/guides"
 description = "A CLI client for ReductStore written in Rust"
 
 [dependencies]
-reduct-rs = "1.15.2"
+reduct-rs = { version = "1.16.1" }
 clap = { version = "4.5.41", features = ["cargo"] }
 dirs = "6.0.0"
 toml = "0.9.2"
