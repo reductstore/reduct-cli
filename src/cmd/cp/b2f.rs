@@ -3,6 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::collections::{BTreeMap, VecDeque};
 use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
@@ -84,6 +85,10 @@ impl CopyVisitor for CopyToFolderVisitor {
         }
 
         Ok(())
+    }
+
+    async fn visit_batch(&self, entry_name: &str, records: Vec<Record>) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        todo!()
     }
 }
 

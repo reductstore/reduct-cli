@@ -3,6 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::collections::{BTreeMap, VecDeque};
 use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
@@ -25,6 +26,13 @@ impl CopyVisitor for CopyToBucketVisitor {
             .content_type(record.content_type())
             .content_length(record.content_length() as u64)
             .stream(record.stream_bytes())
+            .send()
+            .await
+    }
+    async fn visit_batch(&self, entry_name: &str, records: Vec<Record>) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        self.dst_bucket
+            .write_batch(entry_name)
+            .add_records(records)
             .send()
             .await
     }
@@ -64,11 +72,11 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         }
     };
 
-    let visitor = CopyToBucketVisitor {
+    let dst_bucket_visitor = CopyToBucketVisitor {
         dst_bucket: Arc::new(dst_bucket),
     };
 
-    start_loading(src_bucket, query_params, visitor).await
+    start_loading(src_bucket, query_params, dst_bucket_visitor).await
 }
 
 #[cfg(test)]
