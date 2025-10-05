@@ -9,6 +9,7 @@ use crate::io::reduct::build_client;
 use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 struct CopyToBucketVisitor {
@@ -25,6 +26,17 @@ impl CopyVisitor for CopyToBucketVisitor {
             .content_type(record.content_type())
             .content_length(record.content_length() as u64)
             .stream(record.stream_bytes())
+            .send()
+            .await
+    }
+    async fn visit_batch(
+        &self,
+        entry_name: &str,
+        records: Vec<Record>,
+    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        self.dst_bucket
+            .write_batch(entry_name)
+            .add_records(records)
             .send()
             .await
     }
@@ -64,11 +76,11 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         }
     };
 
-    let visitor = CopyToBucketVisitor {
+    let dst_bucket_visitor = CopyToBucketVisitor {
         dst_bucket: Arc::new(dst_bucket),
     };
 
-    start_loading(src_bucket, query_params, visitor).await
+    start_loading(src_bucket, query_params, dst_bucket_visitor).await
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ use futures_util::StreamExt;
 use mime_guess::get_extensions;
 use reduct_rs::{ErrorCode, Labels, Record, ReductError};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tokio::io::AsyncWriteExt;
@@ -84,6 +85,22 @@ impl CopyVisitor for CopyToFolderVisitor {
         }
 
         Ok(())
+    }
+
+    async fn visit_batch(
+        &self,
+        entry_name: &str,
+        records: Vec<Record>,
+    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
+        for record in records {
+            let timestamp = record.timestamp_us();
+            let res = self.visit(entry_name, record).await;
+            if let Err(err) = res {
+                result.insert(timestamp, err);
+            }
+        }
+        Ok(result)
     }
 }
 

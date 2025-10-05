@@ -3,10 +3,8 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use clap::parser::ValuesRef;
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg};
-use reduct_rs::Labels;
 
 pub(crate) fn make_each_n() -> Arg {
     Arg::new("each-n")

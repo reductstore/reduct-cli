@@ -8,7 +8,6 @@ use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
 use crate::parse::ResourcePathParser;
 use clap::{Arg, Command};
-use reduct_rs::Labels;
 
 pub(super) fn create_replica_cmd() -> Command {
     Command::new("create")
