@@ -8,7 +8,6 @@ use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
 use crate::parse::ResourcePathParser;
 use clap::{Arg, Command};
-use reduct_rs::Labels;
 
 pub(super) fn create_replica_cmd() -> Command {
     Command::new("create")
@@ -130,7 +129,7 @@ mod tests {
         assert_eq!(replica.settings.src_bucket, bucket);
         assert_eq!(replica.settings.dst_bucket, bucket2);
         assert_eq!(replica.settings.dst_host, "http://localhost:8383/");
-        assert_eq!(replica.settings.dst_token, "***");
+        assert_eq!(replica.settings.dst_token, None);
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
         assert_eq!(

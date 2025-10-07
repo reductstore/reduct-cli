@@ -7,7 +7,7 @@ use crate::context::CliContext;
 use chrono::DateTime;
 use clap::parser::MatchesError;
 use clap::ArgMatches;
-use reduct_rs::{Bucket, EntryInfo, Labels};
+use reduct_rs::{Bucket, EntryInfo};
 use serde_json::Value;
 use std::time::Duration;
 
