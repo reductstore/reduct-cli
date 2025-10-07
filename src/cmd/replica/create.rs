@@ -129,7 +129,11 @@ mod tests {
         assert_eq!(replica.settings.src_bucket, bucket);
         assert_eq!(replica.settings.dst_bucket, bucket2);
         assert_eq!(replica.settings.dst_host, "http://localhost:8383/");
-        assert_eq!(replica.settings.dst_token, None);
+        assert_eq!(
+            replica.settings.dst_token.unwrap_or("***".into()),
+            "***",
+            "Keep compatibility with v1.16"
+        );
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
         assert_eq!(
