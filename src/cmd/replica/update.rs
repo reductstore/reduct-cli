@@ -82,7 +82,7 @@ fn update_replication_settings(
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
     current_settings.dst_bucket = dest_bucket_name.clone();
     current_settings.dst_host = dest_url.to_string();
-    current_settings.dst_token = token.clone();
+    current_settings.dst_token = Some(token.clone());
 
     if let Some(source_bucket_name) = source_bucket_name {
         current_settings.src_bucket = source_bucket_name.clone();
@@ -149,7 +149,11 @@ mod tests {
         assert_eq!(replica.settings.src_bucket, bucket);
         assert_eq!(replica.settings.dst_bucket, bucket2);
         assert_eq!(replica.settings.dst_host, "http://localhost:8383/");
-        assert_eq!(replica.settings.dst_token, "***");
+        assert_eq!(
+            replica.settings.dst_token.unwrap_or("***".into()),
+            "***",
+            "Keep compatibility with v1.16"
+        );
         assert!(replica.settings.entries.is_empty());
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.each_s, Some(0.5));
@@ -200,7 +204,7 @@ mod tests {
                 ReplicationSettings {
                     dst_bucket: "bucket3".to_string(),
                     dst_host: "http://localhost:8383/".to_string(),
-                    dst_token: current_token,
+                    dst_token: Some(current_token),
                     ..current_settings
                 }
             );
@@ -258,7 +262,7 @@ mod tests {
                 src_bucket: "bucket1".to_string(),
                 dst_bucket: "bucket2".to_string(),
                 dst_host: "http://localhost:8383/".to_string(),
-                dst_token: current_token,
+                dst_token: Some(current_token),
                 include: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
                 exclude: Labels::from_iter(vec![("key2".to_string(), "value2".to_string())]),
                 each_n: None,

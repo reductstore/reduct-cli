@@ -68,7 +68,6 @@ mod tests {
     use crate::parse::QueryParams;
     use reduct_rs::{Bucket, EntryInfo};
     use rstest::*;
-    use std::collections::HashMap;
 
     #[rstest]
     #[tokio::test]
