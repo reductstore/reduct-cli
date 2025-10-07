@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+### Fixed
+
+- Fix compatibility break in v1.17, [PR-145](https://github.com/reductstore/reduct-cli/pull/145)
+
 ## [0.9.0] - 2025-08-26
 
 ### Added
