@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2025-10-08
+
 ## Fixed
 
 - Ignore 401,403 and 503 errors during license check, [PR-146](https://github.com/reductstore/reduct-cli/pull/146)
@@ -120,6 +122,8 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 - Moved from https://github.com/reductstore/reductstore
 
 [Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.9.1...HEAD
+
+[0.9.2]: https://github.com/reductstore/reduct-cli/compare/v0.9.1...v0.9.2
 
 [0.9.1]: https://github.com/reductstore/reduct-cli/compare/v0.9.0...v0.9.1
 
