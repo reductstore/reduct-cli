@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## Fixed
+
+- Ignore 401,403 and 503 errors during license check, [PR-146](https://github.com/reductstore/reduct-cli/pull/146)
+
 ## [0.9.1] - 2025-10-07
 
 ### Fixed
