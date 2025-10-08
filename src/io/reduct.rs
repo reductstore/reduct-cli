@@ -137,14 +137,8 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_build_client_with_url(context: CliContext) {
-        let err = build_client(&context, "http://localhost:8383")
-            .await
-            .err()
-            .unwrap();
-        assert_eq!(
-            err.to_string(),
-            "[Unauthorized] No bearer token in request header"
-        );
+        let result = build_client(&context, "http://localhost:8383").await;
+        assert!(result.is_ok());
     }
 
     #[rstest]
