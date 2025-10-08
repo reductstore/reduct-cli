@@ -140,7 +140,7 @@ jobs:
         run: |
           cargo login ${{ secrets.CRATES_IO_TOKEN }}
       - name: Publish reduct-cli
-        run: cargo publish -p reduct-cli  --allowed-dirty
+        run: cargo publish -p reduct-cli --allow-dirty
 
   make_release:
     runs-on: ubuntu-latest
