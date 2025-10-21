@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2025-10-20
+
+### Changed
+
+- Update reduct-rs to 1.17.0 and other dependencies
+
 ## [0.9.2] - 2025-10-08
 
 ## Fixed
@@ -121,7 +127,9 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 - Moved from https://github.com/reductstore/reductstore
 
-[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.9.1...HEAD
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.9.3...HEAD
+
+[0.9.3]: https://github.com/reductstore/reduct-cli/compare/v0.9.2...v0.9.3
 
 [0.9.2]: https://github.com/reductstore/reduct-cli/compare/v0.9.1...v0.9.2
 
