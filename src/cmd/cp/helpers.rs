@@ -3,6 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,6 +17,8 @@ use tokio::time::{sleep, Instant};
 use crate::parse::{fetch_and_filter_entries, QueryParams};
 
 const DOWNLOAD_ATTEMPTS: u8 = 10;
+const NUMBER_DOWNLOAD_LIMIT: i8 = 80;
+const MEMORY_AMOUNT_LIMIT: i16 = 8192; //8000?  1000 kB kilobyte, 1024 KiB kibibyte
 
 pub(super) struct TransferProgress {
     entry: EntryInfo,
@@ -149,6 +152,7 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
 #[async_trait::async_trait]
 pub(super) trait CopyVisitor {
     async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError>;
+    async fn visit_batch(&self, entry_name: &str, records: Vec<Record>) -> Result<BTreeMap<u64, ReductError>, ReductError>;
 }
 
 /**
@@ -163,7 +167,7 @@ pub(super) trait CopyVisitor {
 pub(super) async fn start_loading<V>(
     src_bucket: Bucket,
     query_params: QueryParams,
-    visitor: V,
+    dst_bucket_v: V,
 ) -> anyhow::Result<()>
 where
     V: CopyVisitor + Send + Sync + 'static,
@@ -175,14 +179,14 @@ where
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
 
-    let visitor = Arc::new(visitor);
+    let dst_bucket_visitor = Arc::new(dst_bucket_v);
     let src_bucket = Arc::new(src_bucket);
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
         let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
 
-        let local_visitor = Arc::clone(&visitor);
+        let local_visitor = Arc::clone(&dst_bucket_visitor);
         let mut params = query_params.clone();
         let bucket = Arc::clone(&src_bucket);
         let mut timestamp = params.start.unwrap_or(entry.oldest_record);
@@ -192,44 +196,12 @@ where
             while attempts > 0 {
                 let query_builder = build_query(&bucket, &entry, &params);
 
-                macro_rules! print_error_progress {
-                    ($err:expr) => {{
-                        transfer_progress.print_error($err.to_string());
-                        Err($err)
-                    }};
-                }
-
-                // Decrement attempts and retry on failure
-                // and start from the last timestamp
-                // we also need to adjust the limit if we have one
-                macro_rules! make_attempt {
-                    ($err:expr) => {{
-                        attempts -= 1;
-                        if attempts == 0 {
-                            print_error_progress!($err)
-                        } else {
-                            params.start = Some(timestamp);
-                            if params.limit.is_some() {
-                                // if we have a limit, we need to reset it on retry
-                                params.limit =
-                                    Some(params.limit.unwrap().saturating_sub(record_count));
-                            }
-                            transfer_progress.print_warning(format!(
-                                "{}. Retrying... (attempts {} / {})",
-                                $err, attempts, DOWNLOAD_ATTEMPTS
-                            ));
-
-                            sleep(Duration::from_secs(1)).await;
-                            Ok(())
-                        }
-                    }};
-                }
                 let _permit = local_sem.acquire().await.unwrap();
 
                 let record_stream = match query_builder.send().await {
                     Ok(stream) => stream,
                     Err(err) => {
-                        if let Err(e) = make_attempt!(err) {
+                        if let Err(e) = make_attempt(&mut attempts, &mut transfer_progress, &mut params, record_count, timestamp, err) {
                             return Err(e);
                         } else {
                             continue;
@@ -241,7 +213,7 @@ where
 
                 while let Some(record) = record_stream.next().await {
                     if let Err(err) = record {
-                        if let Err(e) = make_attempt!(err) {
+                        if let Err(e) = make_attempt(&mut attempts, &mut transfer_progress, &mut params, record_count, timestamp, err) {
                             return Err(e);
                         } else {
                             break;
@@ -258,7 +230,7 @@ where
                     if let Err(err) = result {
                         // ignore conflict errors
                         if err.status() != ErrorCode::Conflict {
-                            return print_error_progress!(err);
+                            return print_error_progress(&mut transfer_progress, err);
                         }
                     }
 
@@ -282,6 +254,182 @@ where
     }
 
     Ok(())
+}
+
+/**
+ * Start loading records from the source bucket and using visitor batch writing
+ *
+ * # Arguments
+ *
+ * `src_bucket` - The source bucket
+ * `query_params` - The query parameters. Use `parse_query_params` to parse the arguments
+ * `visitor` - The visitor that will receive the records
+ */
+pub(super) async fn start_loading_batch<V>(
+    src_bucket: Bucket,
+    query_params: QueryParams,
+    dst_bucket_v: V,
+) -> anyhow::Result<()>
+where
+    V: CopyVisitor + Send + Sync + 'static,
+{
+    let entries = fetch_and_filter_entries(&src_bucket, &query_params.entry_filter).await?;
+
+    let mut tasks = JoinSet::new();
+    let progress = MultiProgress::new();
+
+    let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
+
+    let dst_bucket_visitor = Arc::new(dst_bucket_v);
+    let src_bucket = Arc::new(src_bucket);
+
+    for entry in entries {
+        let local_sem = Arc::clone(&semaphore);
+        let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
+
+        let local_visitor = Arc::clone(&dst_bucket_visitor);
+        let mut params = query_params.clone();
+        let bucket = Arc::clone(&src_bucket);
+        let timestamp = params.start.unwrap_or(entry.oldest_record);
+        let record_count = 0;
+        tasks.spawn(async move {
+            let mut attempts = DOWNLOAD_ATTEMPTS;
+            while attempts > 0 {
+                let query_builder = build_query(&bucket, &entry, &params);
+                let _permit = local_sem.acquire().await.unwrap();
+
+                let record_stream = match query_builder.send().await {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        if let Err(e) = make_attempt(&mut attempts, &mut transfer_progress, &mut params, record_count, timestamp, err) {
+                            return Err(e);
+                        } else {
+                            continue;
+                        }
+                    }
+                };
+
+                tokio::pin!(record_stream);
+
+                let mut number = NUMBER_DOWNLOAD_LIMIT;
+                let mut memory = MEMORY_AMOUNT_LIMIT;
+                let mut records_stack: Vec<Vec<Record>> = Vec::new();
+                while let Some(record) = record_stream.next().await {
+                    if let Err(err) = record {
+                        if let Err(e) = make_attempt(&mut attempts, &mut transfer_progress, &mut params, record_count, timestamp, err) {
+                            return Err(e);
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let record = record?;
+                    if(record.content_length() >= MEMORY_AMOUNT_LIMIT as usize) {
+                        records_stack.push(vec![record]);
+                    }
+                    else {
+                        memory =  memory - record.content_length();
+                        number = number - 1;
+                        if(number < 0 || memory < 0) {
+                            records_stack.push(vec![record]);
+                            //обнуляем лимиты и структуры
+                            number = NUMBER_DOWNLOAD_LIMIT;
+                            memory = MEMORY_AMOUNT_LIMIT;
+                        }
+                        else {
+                            let next_records = records_stack.last_mut()?;
+                            next_records.push(record);
+                        }
+                    }
+                }
+
+                for records in records_stack {
+                    if(records.len() == 1) {
+                        let record = records.get(0);
+                        let content_length = record.content_length() as u64;
+                        let result = local_visitor.visit(&entry.name, records.get(0)).await;
+                        if let Err(err) = result {
+                            // ignore conflict errors
+                            if err.status() != ErrorCode::Conflict {
+                                return print_error_progress(transfer_progress, err);
+                            }
+                        }
+                        transfer_progress.update(timestamp, content_length);
+                        sleep(Duration::from_micros(5)).await;
+                        attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
+                    }
+                    else {
+                        let record = records.last();
+                        let content_length = record.content_length() as u64;
+                        let (errors, _) = local_visitor.visit_batch(&entry.name, records).await;
+                        if let Some((ts, err)) = errors.first_key_value() {
+                            return print_error_progress(transfer_progress, err);
+                        }
+
+                        transfer_progress.update(timestamp, content_length);
+                        sleep(Duration::from_micros(5)).await;
+                        attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
+                    }
+                }
+
+                if attempts == DOWNLOAD_ATTEMPTS {
+                    transfer_progress.done();
+                    break;
+                }
+            }
+
+            return Ok(());
+        });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        let _ = result?;
+    }
+
+    Ok(())
+}
+fn print_error_progress(transfer_progress: &mut TransferProgress, err: ReductError) -> Result<(), String> {
+    transfer_progress.print_error(err.to_string());
+    Err(err.to_string())
+}
+
+// Decrement attempts and retry on failure
+// and start from the last timestamp
+// we also need to adjust the limit if we have one
+async fn make_attempt(
+    attempts: &mut u8,
+    transfer_progress: &mut TransferProgress,
+    params: &mut QueryParams,
+    record_count: u64,
+    timestamp: u64,
+    err: impl std::fmt::Display,
+) -> Result<(), ()> {
+    *attempts -= 1;
+
+    if *attempts == 0 {
+        transfer_progress.print_error(err.to_string());
+        Err(())
+    } else {
+        params.start = Some(timestamp);
+        if let Some(limit) = params.limit {
+            // if we have a limit, we need to reset it on retry
+            params.limit = Some(limit.saturating_sub(record_count));
+        }
+
+        transfer_progress.print_warning(format!(
+            "{}. Retrying... (attempts {} / {})",
+            err, *attempts, DOWNLOAD_ATTEMPTS
+        ));
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        Ok(())
+    }
+}
+
+fn push_to_new_vector(mut records_stack: &mut Vec<Vec<Record>>, record: Record) {
+    let mut new_records = Vec::new();
+    new_records.push(record);
+    records_stack.push(new_records);
 }
 
 fn init_task_progress_bar(

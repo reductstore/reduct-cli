@@ -81,6 +81,14 @@ pub(crate) fn cp_cmd() -> Command {
         .arg(
             make_ext_arg()
         )
+        .arg(
+            Arg::new("batch")
+                .long("batch")
+                .short("b")
+                .help("Enable batching. Groups records together for sending, that improve performance")
+                .required(false)
+                .action(SetTrue)
+        )
 }
 
 pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
