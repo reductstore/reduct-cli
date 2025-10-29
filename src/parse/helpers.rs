@@ -68,6 +68,7 @@ pub(crate) struct QueryParams {
     pub when: Option<Value>,
     pub strict: bool,
     pub ext: Option<Value>,
+    pub batch: bool,
 }
 
 impl Default for QueryParams {
@@ -84,6 +85,7 @@ impl Default for QueryParams {
             when: None,
             strict: false,
             ext: None,
+            batch: false,
         }
     }
 }
@@ -139,6 +141,8 @@ pub(crate) fn parse_query_params(
         None => None,
     };
 
+    let batch = args.get_one::<bool>("batch").unwrap_or(&false);
+
     Ok(QueryParams {
         start,
         stop,
@@ -151,6 +155,7 @@ pub(crate) fn parse_query_params(
         when: json_when,
         strict: *strict,
         ext: ext_json,
+        batch: *batch,
     })
 }
 
