@@ -150,8 +150,7 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
 
 #[async_trait::async_trait]
 pub(super) trait CopyVisitor {
-    async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError>;
-    async fn visit_batch(
+    async fn visit(
         &self,
         entry_name: &str,
         records: Vec<Record>,
@@ -165,12 +164,12 @@ pub(super) trait CopyVisitor {
  *
  * `src_bucket` - The source bucket
  * `query_params` - The query parameters. Use `parse_query_params` to parse the arguments
- * `visitor` - The visitor that will receive the records
+ * `dst_bucket_v` - The dst_bucket_v that will receive the records
  */
 pub(super) async fn start_loading<V>(
     src_bucket: Bucket,
     query_params: QueryParams,
-    visitor: V,
+    dst_bucket_v: V,
 ) -> anyhow::Result<()>
 where
     V: CopyVisitor + Send + Sync + 'static,
@@ -182,14 +181,14 @@ where
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
 
-    let visitor = Arc::new(visitor);
+    let dst_bucket = Arc::new(dst_bucket_v);
     let src_bucket = Arc::new(src_bucket);
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
         let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
 
-        let local_visitor = Arc::clone(&visitor);
+        let local_visitor = Arc::clone(&dst_bucket);
         let mut params = query_params.clone();
         let bucket = Arc::clone(&src_bucket);
         let mut timestamp = params.start.unwrap_or(entry.oldest_record);
@@ -241,35 +240,19 @@ where
                 .await;
                 // for records in records_stack? {
                 for records in records_stack?.iter_mut() {
-                    if records.len() == 1 {
-                        let record = records.pop().unwrap();
-                        timestamp = record.timestamp_us();
-                        let content_length = record.content_length() as u64;
-                        let result = local_visitor.visit(&entry.name, record).await;
-                        if let Err(err) = result {
-                            // ignore conflict errors
-                            if err.status() != ErrorCode::Conflict {
-                                return print_error_progress!(err);
-                            }
-                        }
-                        transfer_progress.update(timestamp, content_length);
-                        sleep(Duration::from_micros(5)).await;
-                        attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
-                    } else {
-                        let record = records.last().unwrap();
-                        timestamp = record.timestamp_us();
-                        let content_length = record.content_length() as u64;
-                        let empty_vec = Vec::new();
-                        let taken_records = std::mem::replace(records, empty_vec);
-                        let errors = local_visitor.visit_batch(&entry.name, taken_records).await;
-                        if let Some((_, err)) = errors?.pop_first() {
-                            return print_error_progress!(err);
-                        }
-
-                        transfer_progress.update(timestamp, content_length);
-                        sleep(Duration::from_micros(5)).await;
-                        attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
+                    let record = records.last().unwrap();
+                    timestamp = record.timestamp_us();
+                    let content_length = record.content_length() as u64;
+                    let empty_vec = Vec::new();
+                    let taken_records = std::mem::replace(records, empty_vec);
+                    let errors = local_visitor.visit(&entry.name, taken_records).await;
+                    if let Some((_, err)) = errors?.pop_first() {
+                        return print_error_progress!(err);
                     }
+
+                    transfer_progress.update(timestamp, content_length);
+                    sleep(Duration::from_micros(5)).await;
+                    attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
                 }
 
                 if attempts == DOWNLOAD_ATTEMPTS {
@@ -438,7 +421,6 @@ mod tests {
             #[async_trait]
             impl CopyVisitor for Visitor {
                 async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError>;
-                async fn visit_batch(&self, entry_name: &str, records: Vec<Record>) -> Result<BTreeMap<u64, ReductError>, ReductError>;
             }
         }
         #[fixture]

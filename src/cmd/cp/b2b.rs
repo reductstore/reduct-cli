@@ -18,27 +18,36 @@ struct CopyToBucketVisitor {
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToBucketVisitor {
-    async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
-        self.dst_bucket
-            .write_record(entry_name)
-            .timestamp_us(record.timestamp_us())
-            .labels(record.labels().clone())
-            .content_type(record.content_type())
-            .content_length(record.content_length() as u64)
-            .stream(record.stream_bytes())
-            .send()
-            .await
-    }
-    async fn visit_batch(
+    async fn visit(
         &self,
         entry_name: &str,
-        records: Vec<Record>,
+        mut records: Vec<Record>,
     ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
-        self.dst_bucket
-            .write_batch(entry_name)
-            .add_records(records)
-            .send()
-            .await
+        if records.len() == 1 {
+            let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
+            let record = records.pop().unwrap();
+            let timestamp = record.timestamp_us();
+            let res = self
+                .dst_bucket
+                .write_record(entry_name)
+                .timestamp_us(record.timestamp_us())
+                .labels(record.labels().clone())
+                .content_type(record.content_type())
+                .content_length(record.content_length() as u64)
+                .stream(record.stream_bytes())
+                .send()
+                .await;
+            if let Err(err) = res {
+                result.insert(timestamp, err);
+            }
+            Ok(result)
+        } else {
+            self.dst_bucket
+                .write_batch(entry_name)
+                .add_records(records)
+                .send()
+                .await
+        }
     }
 }
 

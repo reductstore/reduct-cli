@@ -35,7 +35,71 @@ struct Meta {
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToFolderVisitor {
-    async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
+    async fn visit(
+        &self,
+        entry_name: &str,
+        mut records: Vec<Record>,
+    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
+
+        if records.len() == 1 {
+            let record = records.pop().unwrap();
+            let timestamp = record.timestamp_us();
+            let res = self
+                .visit_one_record(&entry_name, records.pop().unwrap())
+                .await;
+            if let Err(err) = res {
+                result.insert(timestamp, err);
+            }
+            Ok(result)
+        } else {
+            for record in records {
+                let timestamp = record.timestamp_us();
+                let res = self.visit_one_record(entry_name, record).await;
+                if let Err(err) = res {
+                    result.insert(timestamp, err);
+                }
+            }
+            Ok(result)
+        }
+    }
+}
+
+impl CopyToFolderVisitor {
+    fn guess_extension(record: &Record) -> String {
+        if let Some((top, sub)) = record.content_type().split_once('/') {
+            if let Some(well_known) = Self::well_known_ext(top, sub) {
+                well_known.to_string()
+            } else if let Some(ext) = get_extensions(top, sub) {
+                ext.first()
+                    .map_or_else(|| "bin".to_string(), |e| e.to_string())
+            } else {
+                "bin".to_string()
+            }
+        } else {
+            "bin".to_string()
+        }
+    }
+
+    fn well_known_ext(top: &str, sub: &str) -> Option<&'static str> {
+        match (top, sub) {
+            ("application", "octet-stream") => Some("bin"),
+            ("text", "html") => Some("html"),
+            ("text", "markdown") => Some("md"),
+            ("text", "plain") => Some("txt"),
+            ("text", "csv") => Some("csv"),
+            ("application", "json") => Some("json"),
+            ("application", "xml") => Some("xml"),
+            ("application", "pdf") => Some("pdf"),
+            ("application", "csv") => Some("csv"),
+            ("application", "mcap") => Some("mcap"),
+            ("image", "jpeg") => Some("jpg"),
+            ("image", "png") => Some("png"),
+            _ => None,
+        }
+    }
+
+    async fn visit_one_record(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
         fs::create_dir_all(&self.dst_folder.join(entry_name)).await?;
 
         let ext = if let Some(ext) = &self.ext {
@@ -85,57 +149,6 @@ impl CopyVisitor for CopyToFolderVisitor {
         }
 
         Ok(())
-    }
-
-    async fn visit_batch(
-        &self,
-        entry_name: &str,
-        records: Vec<Record>,
-    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
-        let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
-        for record in records {
-            let timestamp = record.timestamp_us();
-            let res = self.visit(entry_name, record).await;
-            if let Err(err) = res {
-                result.insert(timestamp, err);
-            }
-        }
-        Ok(result)
-    }
-}
-
-impl CopyToFolderVisitor {
-    fn guess_extension(record: &Record) -> String {
-        if let Some((top, sub)) = record.content_type().split_once('/') {
-            if let Some(well_known) = Self::well_known_ext(top, sub) {
-                well_known.to_string()
-            } else if let Some(ext) = get_extensions(top, sub) {
-                ext.first()
-                    .map_or_else(|| "bin".to_string(), |e| e.to_string())
-            } else {
-                "bin".to_string()
-            }
-        } else {
-            "bin".to_string()
-        }
-    }
-
-    fn well_known_ext(top: &str, sub: &str) -> Option<&'static str> {
-        match (top, sub) {
-            ("application", "octet-stream") => Some("bin"),
-            ("text", "html") => Some("html"),
-            ("text", "markdown") => Some("md"),
-            ("text", "plain") => Some("txt"),
-            ("text", "csv") => Some("csv"),
-            ("application", "json") => Some("json"),
-            ("application", "xml") => Some("xml"),
-            ("application", "pdf") => Some("pdf"),
-            ("application", "csv") => Some("csv"),
-            ("application", "mcap") => Some("mcap"),
-            ("image", "jpeg") => Some("jpg"),
-            ("image", "png") => Some("png"),
-            _ => None,
-        }
     }
 }
 
