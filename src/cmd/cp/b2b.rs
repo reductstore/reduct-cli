@@ -109,7 +109,7 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
-        async fn test_visit(context: CliContext, #[future] bucket: String, record: Record) {
+        async fn test_visit(context: CliContext, #[future] bucket: String, records: Vec<Record>) {
             let client = build_client(&context, "local").await.unwrap();
             let dst_bucket = client
                 .create_bucket(&bucket.await)
@@ -124,7 +124,7 @@ mod tests {
             };
 
             // should write the record to the destination bucket
-            visitor.visit("test", record).await.unwrap();
+            visitor.visit("test", records).await.unwrap();
 
             let record = dst_bucket
                 .read_record("test")
@@ -148,16 +148,17 @@ mod tests {
             context: CliContext,
             #[future] bucket: String,
             #[future] bucket2: String,
-            record: Record,
         ) {
             let client = build_client(&context, "local").await.unwrap();
             let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
             let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
 
+            let test_data = Bytes::from_static(b"test");
+
             src_bucket
                 .write_record("test")
                 .timestamp_us(123456)
-                .data(record.bytes().await.unwrap())
+                .data(test_data.clone())
                 .send()
                 .await
                 .unwrap();
@@ -178,7 +179,7 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test"));
+            assert_eq!(record.bytes().await.unwrap(), test_data);
         }
     }
 
@@ -217,12 +218,12 @@ mod tests {
     }
 
     #[fixture]
-    fn record() -> Record {
-        RecordBuilder::new()
+    fn records() -> Vec<Record> {
+        vec![RecordBuilder::new()
             .timestamp_us(123456)
             .content_type("text/plain".to_string())
             .add_label("key".to_string(), "value".to_string())
             .data(Bytes::from_static(b"test"))
-            .build()
+            .build()]
     }
 }

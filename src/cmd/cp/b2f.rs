@@ -38,16 +38,14 @@ impl CopyVisitor for CopyToFolderVisitor {
     async fn visit(
         &self,
         entry_name: &str,
-        mut records: Vec<Record>,
+        records: Vec<Record>,
     ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
         let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
 
         if records.len() == 1 {
-            let record = records.pop().unwrap();
+            let record = records.into_iter().next().unwrap();
             let timestamp = record.timestamp_us();
-            let res = self
-                .visit_one_record(&entry_name, records.pop().unwrap())
-                .await;
+            let res = self.visit_one_record(&entry_name, record).await;
             if let Err(err) = res {
                 result.insert(timestamp, err);
             }
@@ -199,9 +197,9 @@ mod tests {
         async fn test_copy_to_folder_visitor(
             visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -219,10 +217,10 @@ mod tests {
         async fn test_copy_to_folder_visitor_ext(
             mut visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
             visitor.ext = Some("md".to_string());
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -236,10 +234,10 @@ mod tests {
         async fn test_copy_to_folder_visitor_with_meta(
             mut visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
             visitor.with_meta = true;
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder.clone())
@@ -285,17 +283,22 @@ mod tests {
     async fn test_cp_bucket_to_folder(
         context: CliContext,
         #[future] bucket: String,
-        record: Record,
+        records: Vec<Record>,
     ) {
         let client = build_client(&context, "local").await.unwrap();
         let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
 
+        let timestamp = records[0].timestamp_us();
+        let content_type = records[0].content_type().to_string();
+        let labels = records[0].labels().clone();
+        let data = Bytes::from_static(b"Hello, World!");
+
         src_bucket
             .write_record("test")
-            .timestamp_us(record.timestamp_us())
-            .content_type(&*record.content_type().to_string())
-            .labels(record.labels().clone())
-            .data(record.bytes().await.unwrap())
+            .timestamp_us(timestamp)
+            .content_type(&*content_type)
+            .labels(labels)
+            .data(data)
             .send()
             .await
             .unwrap();
@@ -341,13 +344,13 @@ mod tests {
     }
 
     #[fixture]
-    fn record() -> Record {
-        RecordBuilder::new()
+    fn records() -> Vec<Record> {
+        vec![RecordBuilder::new()
             .timestamp_us(1234567890)
             .data(Bytes::from_static(b"Hello, World!"))
             .content_type("text/html".to_string())
             .add_label("planet".to_string(), "Earth".to_string())
             .add_label("greeting".to_string(), "Hello".to_string())
-            .build()
+            .build()]
     }
 }

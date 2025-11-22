@@ -420,7 +420,7 @@ mod tests {
             pub Visitor {}
             #[async_trait]
             impl CopyVisitor for Visitor {
-                async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError>;
+                async fn visit(&self, entry_name: &str, records: Vec<Record>)  -> Result<BTreeMap<u64, ReductError>, ReductError>;
             }
         }
         #[fixture]
@@ -452,7 +452,10 @@ mod tests {
         #[tokio::test]
         async fn test_downloading(#[future] src_bucket: Bucket, mut visitor: MockVisitor) {
             let src_bucket = src_bucket.await;
-            visitor.expect_visit().times(2).return_const(Ok(()));
+            visitor
+                .expect_visit()
+                .times(2)
+                .return_const(Ok(BTreeMap::new()));
 
             start_loading(src_bucket, QueryParams::default(), visitor)
                 .await
@@ -467,22 +470,22 @@ mod tests {
                 .expect_visit()
                 .withf(|entry, _record| entry == "entry-1")
                 .times(1)
-                .return_const(Ok(()));
+                .return_const(Ok(BTreeMap::new()));
             visitor
                 .expect_visit()
                 .withf(|entry, _record| entry == "entry-2")
                 .times(1)
-                .return_const(Ok(()));
+                .return_const(Ok(BTreeMap::new()));
             visitor
                 .expect_visit()
-                .withf(|entry, record| {
+                .withf(|entry, records| {
                     entry == "entry-3"
-                        && record.timestamp_us() == 1
-                        && record.labels().get("key").unwrap() == "value"
-                        && record.content_type() == "text/plain"
+                        && records[0].timestamp_us() == 1
+                        && records[0].labels().get("key").unwrap() == "value"
+                        && records[0].content_type() == "text/plain"
                 })
                 .times(1)
-                .return_const(Ok(()));
+                .return_const(Ok(BTreeMap::new()));
 
             src_bucket
                 .write_record("entry-3")
@@ -515,7 +518,7 @@ mod tests {
                 .expect_visit()
                 .withf(|entry, _record| entry == "entry-2")
                 .times(1)
-                .return_const(Ok(()));
+                .return_const(Ok(BTreeMap::new()));
 
             let result = start_loading(src_bucket, QueryParams::default(), visitor).await;
             assert!(result.is_ok());
@@ -528,7 +531,10 @@ mod tests {
             mut visitor: MockVisitor,
         ) {
             let src_bucket = src_bucket.await;
-            visitor.expect_visit().times(2).return_const(Ok(()));
+            visitor
+                .expect_visit()
+                .times(2)
+                .return_const(Ok(BTreeMap::new()));
 
             let params = QueryParams {
                 entry_filter: vec!["entry-*".to_string()],
@@ -549,7 +555,7 @@ mod tests {
                 .expect_visit()
                 .times(1)
                 .with(eq("entry-1"), always())
-                .return_const(Ok(()));
+                .return_const(Ok(BTreeMap::new()));
 
             let params = QueryParams {
                 entry_filter: vec!["entry-1".to_string()],
@@ -563,7 +569,10 @@ mod tests {
         #[tokio::test]
         async fn test_downloading_limit(#[future] src_bucket: Bucket, mut visitor: MockVisitor) {
             let src_bucket = src_bucket.await;
-            visitor.expect_visit().times(2).return_const(Ok(()));
+            visitor
+                .expect_visit()
+                .times(2)
+                .return_const(Ok(BTreeMap::new()));
 
             src_bucket
                 .write_record("entry-1")
