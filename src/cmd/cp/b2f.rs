@@ -214,6 +214,35 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
+        async fn test_copy_to_folder_visitor_batch(
+            visitor: CopyToFolderVisitor,
+            entry_name: String,
+            batch_records: Vec<Record>,
+        ) {
+            let result = visitor.visit(&entry_name, batch_records).await;
+            assert!(result.is_ok());
+
+            let file_path = PathBuf::from(&visitor.dst_folder)
+                .join(&entry_name)
+                .join("1234567891.html");
+            assert!(file_path.exists());
+            assert_eq!(
+                fs::read_to_string(file_path).await.unwrap(),
+                "Hello, World1!"
+            );
+
+            let file_path = PathBuf::from(&visitor.dst_folder)
+                .join(&entry_name)
+                .join("1234567892.html");
+            assert!(file_path.exists());
+            assert_eq!(
+                fs::read_to_string(file_path).await.unwrap(),
+                "Hello, World2!"
+            );
+        }
+
+        #[rstest]
+        #[tokio::test]
         async fn test_copy_to_folder_visitor_ext(
             mut visitor: CopyToFolderVisitor,
             entry_name: String,
@@ -323,6 +352,65 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test]
+    async fn test_cp_bucket_to_folder_with_more_than_80_records(
+        context: CliContext,
+        #[future] bucket: String,
+        records: Vec<Record>,
+    ) {
+        let client = build_client(&context, "local").await.unwrap();
+        let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+
+        for i in 0..81 {
+            let timestamp = records[0].timestamp_us() + i;
+            let content_type = records[0].content_type().to_string();
+            let labels = records[0].labels().clone();
+            let data = Bytes::from(format!("Hello, World{}!", i));
+
+            src_bucket
+                .write_record("test")
+                .timestamp_us(timestamp)
+                .content_type(&*content_type)
+                .labels(labels)
+                .data(data)
+                .send()
+                .await
+                .unwrap();
+        }
+        let path = tempdir().unwrap().keep();
+        let args = cp_cmd()
+            .try_get_matches_from(vec![
+                "cp",
+                format!("local/{}", src_bucket.name()).as_str(),
+                format!("{}", path.to_string_lossy()).as_str(),
+            ])
+            .unwrap();
+
+        cp_bucket_to_folder(&context, &args).await.unwrap();
+
+        let file_path = path.join("test").join("1234567890.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World0!"
+        );
+
+        let file_path = path.join("test").join("1234567930.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World40!"
+        );
+
+        let file_path = path.join("test").join("1234567970.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World80!"
+        );
+    }
+
+    #[rstest]
     #[case("application/octet-stream", "bin")]
     #[case("text/html", "html")]
     #[case("text/markdown", "md")]
@@ -352,5 +440,25 @@ mod tests {
             .add_label("planet".to_string(), "Earth".to_string())
             .add_label("greeting".to_string(), "Hello".to_string())
             .build()]
+    }
+
+    #[fixture]
+    fn batch_records() -> Vec<Record> {
+        vec![
+            RecordBuilder::new()
+                .timestamp_us(1234567891)
+                .data(Bytes::from_static(b"Hello, World1!"))
+                .content_type("text/html".to_string())
+                .add_label("planet".to_string(), "Mars".to_string())
+                .add_label("greeting".to_string(), "Hello1".to_string())
+                .build(),
+            RecordBuilder::new()
+                .timestamp_us(1234567892)
+                .data(Bytes::from_static(b"Hello, World2!"))
+                .content_type("text/html".to_string())
+                .add_label("planet".to_string(), "Jupiter".to_string())
+                .add_label("greeting".to_string(), "Hello2".to_string())
+                .build(),
+        ]
     }
 }

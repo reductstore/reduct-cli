@@ -7,24 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add batching in reduct-cli for cp command
 
 ## [0.9.0] - 2025-08-26
 
 ### Added
 
-- Add attempts to `reduct-cli cp` command to recover after errors, [PR-132](https://github.com/reductstore/reduct-cli/pull/132)
+- Add attempts to `reduct-cli cp` command to recover after
+  errors, [PR-132](https://github.com/reductstore/reduct-cli/pull/132)
 
 ## [0.8.0] - 2025-07-31
 
 ### Breaking changes:
 
-- Remove include/exclude options from `reduct-cli cp` and `reduct-cli replica` commands, [PR-122](https://github.com/reductstore/reduct-cli/pull/122)
+- Remove include/exclude options from `reduct-cli cp` and `reduct-cli replica`
+  commands, [PR-122](https://github.com/reductstore/reduct-cli/pull/122)
 
 ## [0.7.0] - 2025-06-11
 
 ### Breaking changes:
 
-- Use `-t` instead of `-T` for the `--time` flag in `reduct-cli rm` command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
+- Use `-t` instead of `-T` for the `--time` flag in `reduct-cli rm`
+  command, [PR-108](https://github.com/reductstore/reduct-cli/pull/108)
 
 ### Added:
 
@@ -59,7 +63,8 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 ### Added:
 
-- RS-552: Add when and strict arguments to cp and rm commands, [PR-51](https://github.com/reductstore/reduct-cli/pull/51)
+- RS-552: Add when and strict arguments to cp and rm
+  commands, [PR-51](https://github.com/reductstore/reduct-cli/pull/51)
 
 ## [0.4.0] - 2024-10-22
 
@@ -71,7 +76,8 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 ### Fixed:
 
-- RS-357: Print an error message if SSL certificate is invalid, [PR-19](https://github.com/reductstore/reduct-cli/pull/19)
+- RS-357: Print an error message if SSL certificate is
+  invalid, [PR-19](https://github.com/reductstore/reduct-cli/pull/19)
 - RS-518: Progress bar status for limited query, [PR-20](https://github.com/reductstore/reduct-cli/pull/20)
 
 ## [0.3.1] - 2024-07-19
@@ -84,17 +90,20 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 ### Added:
 
-- RS-318: Downsampling options for `reduct-cli cp` and `reduct-cli replica` commands, [PR-10](https://github.com/reductstore/reduct-cli/pull/10)
+- RS-318: Downsampling options for `reduct-cli cp` and `reduct-cli replica`
+  commands, [PR-10](https://github.com/reductstore/reduct-cli/pull/10)
 
 ## [0.2.0] - 2024-04-29
 
 ### Added:
 
-- RS-55: `--only-entries` option to delete only entries in `bucket rm` cmd, [PR-8](https://github.com/reductstore/reduct-cli/pull/8)
+- RS-55: `--only-entries` option to delete only entries in `bucket rm`
+  cmd, [PR-8](https://github.com/reductstore/reduct-cli/pull/8)
 
 ### Fixed:
 
-- Wrong file extension for application/octet-stream content type in `reduct-cli cp` command, [PR-4](https://github.com/reductstore/reduct-cli/pull/4)
+- Wrong file extension for application/octet-stream content type in `reduct-cli cp`
+  command, [PR-4](https://github.com/reductstore/reduct-cli/pull/4)
 - Wrong progress calculation in `reduct-cli cp`, [PR-7](https://github.com/reductstore/reduct-cli/pull/7)
 
 ### Changed:
