@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+### Changes
+
+- Update reduct-rs to 1.17.2 with cookie jar support
+
 ## [0.9.3] - 2025-10-20
 
 ### Changed
