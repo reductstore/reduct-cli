@@ -48,4 +48,8 @@ If failures show connection errors to `localhost:8383` or ReductStore endpoints:
 ### 6. Verify and report
 
 - Re-run full test suite (or CI-equivalent subset) and confirm passes.
+- Always validate against both `reduct/store:latest` and `reduct/store:main` after changes:
+  - `docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d reduct/store:latest`
+  - `RS_API_TOKEN=TOKEN cargo test -- --test-threads=1`
+  - Stop/remove the container, then repeat for `reduct/store:main`.
 - Summarize changes and note any remaining gaps (e.g., requires running container).

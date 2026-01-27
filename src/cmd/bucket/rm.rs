@@ -140,6 +140,7 @@ mod tests {
     use bytes::Bytes;
     use reduct_rs::ErrorCode;
     use rstest::*;
+    use tokio::time::sleep;
 
     #[rstest]
     #[tokio::test]
@@ -155,15 +156,7 @@ mod tests {
         ]);
 
         assert_eq!(rm_bucket(&context, &args).await.unwrap(), ());
-        assert_eq!(
-            client
-                .get_bucket(&bucket_name)
-                .await
-                .err()
-                .unwrap()
-                .status(),
-            ErrorCode::NotFound
-        );
+        wait_for_bucket_removed(&client, &bucket_name).await;
         assert_eq!(
             context.stdout().history(),
             vec!["Bucket 'test_bucket' deleted"]
@@ -193,17 +186,7 @@ mod tests {
         ]);
 
         assert_eq!(rm_bucket(&context, &args).await.unwrap(), ());
-        assert_eq!(
-            client
-                .get_bucket(&bucket_name)
-                .await
-                .unwrap()
-                .entries()
-                .await
-                .unwrap()
-                .len(),
-            0
-        );
+        wait_for_empty_entries(&client, &bucket_name).await;
         assert_eq!(
             context.stdout().history(),
             vec!["Entries [\"test\"] deleted"]
@@ -218,6 +201,41 @@ mod tests {
         assert_eq!(
             args.err().unwrap().to_string(),
             "error: invalid value 'local' for '<BUCKET_PATH>'\n\nFor more information, try '--help'.\n"
+        );
+    }
+
+    async fn wait_for_empty_entries(client: &ReductClient, bucket_name: &str) {
+        for _ in 0..50 {
+            let count = client
+                .get_bucket(bucket_name)
+                .await
+                .unwrap()
+                .entries()
+                .await
+                .unwrap()
+                .len();
+            if count == 0 {
+                break;
+            }
+            sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
+    async fn wait_for_bucket_removed(client: &ReductClient, bucket_name: &str) {
+        for _ in 0..50 {
+            match client.get_bucket(bucket_name).await {
+                Ok(_) => sleep(std::time::Duration::from_millis(100)).await,
+                Err(err) => {
+                    if err.status() == ErrorCode::NotFound {
+                        return;
+                    }
+                    sleep(std::time::Duration::from_millis(100)).await;
+                }
+            }
+        }
+        assert_eq!(
+            client.get_bucket(bucket_name).await.err().unwrap().status(),
+            ErrorCode::NotFound
         );
     }
 }

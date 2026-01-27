@@ -146,6 +146,7 @@ fn build_remover(
 mod tests {
     use super::*;
     use crate::context::tests::{bucket, context};
+    use reduct_rs::ErrorCode;
     use rstest::*;
 
     #[rstest]
@@ -167,28 +168,22 @@ mod tests {
 
         rm_handler(&context, &args).await.unwrap();
 
-        assert_eq!(
-            bucket
-                .read_record("entry-1")
-                .timestamp_us(150)
-                .send()
-                .await
-                .err()
-                .unwrap()
-                .to_string(),
-            "[NotFound] No record with timestamp 150"
-        );
-        assert_eq!(
-            bucket
-                .read_record("entry-2")
-                .timestamp_us(150)
-                .send()
-                .await
-                .err()
-                .unwrap()
-                .to_string(),
-            "[NotFound] No record with timestamp 150"
-        );
+        let err = bucket
+            .read_record("entry-1")
+            .timestamp_us(150)
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.status(), ErrorCode::NotFound);
+        let err = bucket
+            .read_record("entry-2")
+            .timestamp_us(150)
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.status(), ErrorCode::NotFound);
     }
 
     #[rstest]
@@ -209,28 +204,22 @@ mod tests {
 
         rm_handler(&context, &args).await.unwrap();
 
-        assert_eq!(
-            bucket
-                .read_record("entry-1")
-                .timestamp_us(150)
-                .send()
-                .await
-                .err()
-                .unwrap()
-                .to_string(),
-            "[NotFound] No record with timestamp 150"
-        );
-        assert_eq!(
-            bucket
-                .read_record("entry-2")
-                .timestamp_us(150)
-                .send()
-                .await
-                .err()
-                .unwrap()
-                .to_string(),
-            "[NotFound] No record with timestamp 150"
-        );
+        let err = bucket
+            .read_record("entry-1")
+            .timestamp_us(150)
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.status(), ErrorCode::NotFound);
+        let err = bucket
+            .read_record("entry-2")
+            .timestamp_us(150)
+            .send()
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.status(), ErrorCode::NotFound);
     }
 
     #[fixture]

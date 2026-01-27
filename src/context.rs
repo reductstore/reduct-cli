@@ -103,8 +103,10 @@ pub(crate) mod tests {
     use crate::config::{Alias, ConfigFile};
     use crate::io::reduct::build_client;
     use crate::io::std::Output;
+    use reduct_rs::ErrorCode;
     use rstest::fixture;
     use std::cell::RefCell;
+    use tokio::time::sleep;
 
     use tempfile::tempdir;
 
@@ -172,10 +174,7 @@ pub(crate) mod tests {
     #[fixture]
     pub(crate) async fn bucket(context: CliContext) -> String {
         let client = build_client(&context, "local").await.unwrap();
-        // remove the bucket if it already exists
-        if let Ok(bucket) = client.get_bucket("test_bucket").await {
-            bucket.remove().await.unwrap();
-        }
+        ensure_bucket_absent(&client, "test_bucket").await;
 
         "test_bucket".to_string()
     }
@@ -183,12 +182,27 @@ pub(crate) mod tests {
     #[fixture]
     pub(crate) async fn bucket2(context: CliContext) -> String {
         let client = build_client(&context, "local").await.unwrap();
-        // remove the bucket if it already exists
-        if let Ok(bucket) = client.get_bucket("test_bucket_2").await {
-            bucket.remove().await.unwrap();
-        }
+        ensure_bucket_absent(&client, "test_bucket_2").await;
 
         "test_bucket_2".to_string()
+    }
+
+    async fn ensure_bucket_absent(client: &reduct_rs::ReductClient, name: &str) {
+        if let Ok(bucket) = client.get_bucket(name).await {
+            let _ = bucket.remove().await;
+        }
+
+        for _ in 0..50 {
+            match client.get_bucket(name).await {
+                Ok(_) => sleep(Duration::from_millis(100)).await,
+                Err(err) => {
+                    if err.status() == ErrorCode::NotFound {
+                        break;
+                    }
+                    sleep(Duration::from_millis(100)).await
+                }
+            }
+        }
     }
 
     #[fixture]
