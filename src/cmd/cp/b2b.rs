@@ -9,6 +9,7 @@ use crate::io::reduct::build_client;
 use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 struct CopyToBucketVisitor {
@@ -17,16 +18,36 @@ struct CopyToBucketVisitor {
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToBucketVisitor {
-    async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
-        self.dst_bucket
-            .write_record(entry_name)
-            .timestamp_us(record.timestamp_us())
-            .labels(record.labels().clone())
-            .content_type(record.content_type())
-            .content_length(record.content_length() as u64)
-            .stream(record.stream_bytes())
-            .send()
-            .await
+    async fn visit(
+        &self,
+        entry_name: &str,
+        mut records: Vec<Record>,
+    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        if records.len() == 1 {
+            let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
+            let record = records.pop().unwrap();
+            let timestamp = record.timestamp_us();
+            let res = self
+                .dst_bucket
+                .write_record(entry_name)
+                .timestamp_us(record.timestamp_us())
+                .labels(record.labels().clone())
+                .content_type(record.content_type())
+                .content_length(record.content_length() as u64)
+                .stream(record.stream_bytes())
+                .send()
+                .await;
+            if let Err(err) = res {
+                result.insert(timestamp, err);
+            }
+            Ok(result)
+        } else {
+            self.dst_bucket
+                .write_batch(entry_name)
+                .add_records(records)
+                .send()
+                .await
+        }
     }
 }
 
@@ -64,11 +85,11 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         }
     };
 
-    let visitor = CopyToBucketVisitor {
+    let dst_bucket_visitor = CopyToBucketVisitor {
         dst_bucket: Arc::new(dst_bucket),
     };
 
-    start_loading(src_bucket, query_params, visitor).await
+    start_loading(src_bucket, query_params, dst_bucket_visitor).await
 }
 
 #[cfg(test)]
@@ -88,7 +109,7 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
-        async fn test_visit(context: CliContext, #[future] bucket: String, record: Record) {
+        async fn test_visit(context: CliContext, #[future] bucket: String, records: Vec<Record>) {
             let client = build_client(&context, "local").await.unwrap();
             let dst_bucket = client
                 .create_bucket(&bucket.await)
@@ -103,7 +124,7 @@ mod tests {
             };
 
             // should write the record to the destination bucket
-            visitor.visit("test", record).await.unwrap();
+            visitor.visit("test", records).await.unwrap();
 
             let record = dst_bucket
                 .read_record("test")
@@ -114,6 +135,50 @@ mod tests {
             assert_eq!(record.content_type(), "text/plain");
             assert_eq!(record.content_length(), 4);
             assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test"));
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_visit_with_batch(
+            context: CliContext,
+            #[future] bucket: String,
+            batch_records: Vec<Record>,
+        ) {
+            let client = build_client(&context, "local").await.unwrap();
+            let dst_bucket = client
+                .create_bucket(&bucket.await)
+                .exist_ok(true)
+                .send()
+                .await
+                .unwrap();
+
+            let dst_bucket = Arc::new(dst_bucket);
+            let visitor = CopyToBucketVisitor {
+                dst_bucket: Arc::clone(&dst_bucket),
+            };
+
+            // should write the record to the destination bucket
+            visitor.visit("batch_test", batch_records).await.unwrap();
+
+            let record = dst_bucket
+                .read_record("batch_test")
+                .timestamp_us(123457)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(record.content_type(), "text/plain");
+            assert_eq!(record.content_length(), 5);
+            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test1"));
+
+            let record = dst_bucket
+                .read_record("batch_test")
+                .timestamp_us(123458)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(record.content_type(), "text/plain");
+            assert_eq!(record.content_length(), 5);
+            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test2"));
         }
     }
 
@@ -127,16 +192,17 @@ mod tests {
             context: CliContext,
             #[future] bucket: String,
             #[future] bucket2: String,
-            record: Record,
         ) {
             let client = build_client(&context, "local").await.unwrap();
             let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
             let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
 
+            let test_data = Bytes::from_static(b"test");
+
             src_bucket
                 .write_record("test")
                 .timestamp_us(123456)
-                .data(record.bytes().await.unwrap())
+                .data(test_data.clone())
                 .send()
                 .await
                 .unwrap();
@@ -157,7 +223,61 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test"));
+            assert_eq!(record.bytes().await.unwrap(), test_data);
+        }
+        #[rstest]
+        #[tokio::test]
+        async fn test_cp_bucket_to_bucket_more_than_80_records(
+            context: CliContext,
+            #[future] bucket: String,
+            #[future] bucket2: String,
+        ) {
+            let client = build_client(&context, "local").await.unwrap();
+            let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+            let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
+
+            for i in 0..81 {
+                let test_data = Bytes::from(format!("test{}", i));
+                src_bucket
+                    .write_record("test")
+                    .timestamp_us(123456 + i)
+                    .data(test_data.clone())
+                    .send()
+                    .await
+                    .unwrap();
+            }
+
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    format!("local/{}", src_bucket.name()).as_str(),
+                    format!("local/{}", dst_bucket.name()).as_str(),
+                ])
+                .unwrap();
+
+            cp_bucket_to_bucket(&context, &args).await.unwrap();
+
+            let record = dst_bucket
+                .read_record("test")
+                .timestamp_us(123456)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test0"));
+            let record = dst_bucket
+                .read_record("test")
+                .timestamp_us(123496)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test40"));
+            let record = dst_bucket
+                .read_record("test")
+                .timestamp_us(123536)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test80"));
         }
     }
 
@@ -196,12 +316,30 @@ mod tests {
     }
 
     #[fixture]
-    fn record() -> Record {
-        RecordBuilder::new()
+    fn records() -> Vec<Record> {
+        vec![RecordBuilder::new()
             .timestamp_us(123456)
             .content_type("text/plain".to_string())
             .add_label("key".to_string(), "value".to_string())
             .data(Bytes::from_static(b"test"))
-            .build()
+            .build()]
+    }
+
+    #[fixture]
+    fn batch_records() -> Vec<Record> {
+        vec![
+            RecordBuilder::new()
+                .timestamp_us(123457)
+                .content_type("text/plain".to_string())
+                .add_label("key".to_string(), "value".to_string())
+                .data(Bytes::from_static(b"test1"))
+                .build(),
+            RecordBuilder::new()
+                .timestamp_us(123458)
+                .content_type("text/plain".to_string())
+                .add_label("key".to_string(), "value".to_string())
+                .data(Bytes::from_static(b"test2"))
+                .build(),
+        ]
     }
 }

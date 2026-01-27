@@ -1347,6 +1347,7 @@ dependencies = [
  "dirs",
  "futures-util",
  "indicatif",
+ "log",
  "mime_guess",
  "mockall",
  "reduct-rs",

@@ -11,6 +11,7 @@ use futures_util::StreamExt;
 use mime_guess::get_extensions;
 use reduct_rs::{ErrorCode, Labels, Record, ReductError};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use tokio::io::AsyncWriteExt;
@@ -34,7 +35,69 @@ struct Meta {
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToFolderVisitor {
-    async fn visit(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
+    async fn visit(
+        &self,
+        entry_name: &str,
+        records: Vec<Record>,
+    ) -> Result<BTreeMap<u64, ReductError>, ReductError> {
+        let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
+
+        if records.len() == 1 {
+            let record = records.into_iter().next().unwrap();
+            let timestamp = record.timestamp_us();
+            let res = self.visit_one_record(&entry_name, record).await;
+            if let Err(err) = res {
+                result.insert(timestamp, err);
+            }
+            Ok(result)
+        } else {
+            for record in records {
+                let timestamp = record.timestamp_us();
+                let res = self.visit_one_record(entry_name, record).await;
+                if let Err(err) = res {
+                    result.insert(timestamp, err);
+                }
+            }
+            Ok(result)
+        }
+    }
+}
+
+impl CopyToFolderVisitor {
+    fn guess_extension(record: &Record) -> String {
+        if let Some((top, sub)) = record.content_type().split_once('/') {
+            if let Some(well_known) = Self::well_known_ext(top, sub) {
+                well_known.to_string()
+            } else if let Some(ext) = get_extensions(top, sub) {
+                ext.first()
+                    .map_or_else(|| "bin".to_string(), |e| e.to_string())
+            } else {
+                "bin".to_string()
+            }
+        } else {
+            "bin".to_string()
+        }
+    }
+
+    fn well_known_ext(top: &str, sub: &str) -> Option<&'static str> {
+        match (top, sub) {
+            ("application", "octet-stream") => Some("bin"),
+            ("text", "html") => Some("html"),
+            ("text", "markdown") => Some("md"),
+            ("text", "plain") => Some("txt"),
+            ("text", "csv") => Some("csv"),
+            ("application", "json") => Some("json"),
+            ("application", "xml") => Some("xml"),
+            ("application", "pdf") => Some("pdf"),
+            ("application", "csv") => Some("csv"),
+            ("application", "mcap") => Some("mcap"),
+            ("image", "jpeg") => Some("jpg"),
+            ("image", "png") => Some("png"),
+            _ => None,
+        }
+    }
+
+    async fn visit_one_record(&self, entry_name: &str, record: Record) -> Result<(), ReductError> {
         fs::create_dir_all(&self.dst_folder.join(entry_name)).await?;
 
         let ext = if let Some(ext) = &self.ext {
@@ -87,41 +150,6 @@ impl CopyVisitor for CopyToFolderVisitor {
     }
 }
 
-impl CopyToFolderVisitor {
-    fn guess_extension(record: &Record) -> String {
-        if let Some((top, sub)) = record.content_type().split_once('/') {
-            if let Some(well_known) = Self::well_known_ext(top, sub) {
-                well_known.to_string()
-            } else if let Some(ext) = get_extensions(top, sub) {
-                ext.first()
-                    .map_or_else(|| "bin".to_string(), |e| e.to_string())
-            } else {
-                "bin".to_string()
-            }
-        } else {
-            "bin".to_string()
-        }
-    }
-
-    fn well_known_ext(top: &str, sub: &str) -> Option<&'static str> {
-        match (top, sub) {
-            ("application", "octet-stream") => Some("bin"),
-            ("text", "html") => Some("html"),
-            ("text", "markdown") => Some("md"),
-            ("text", "plain") => Some("txt"),
-            ("text", "csv") => Some("csv"),
-            ("application", "json") => Some("json"),
-            ("application", "xml") => Some("xml"),
-            ("application", "pdf") => Some("pdf"),
-            ("application", "csv") => Some("csv"),
-            ("application", "mcap") => Some("mcap"),
-            ("image", "jpeg") => Some("jpg"),
-            ("image", "png") => Some("png"),
-            _ => None,
-        }
-    }
-}
-
 pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     let (src_instance, src_bucket) = args
         .get_one::<(String, String)>("SOURCE_BUCKET_OR_FOLDER")
@@ -169,9 +197,9 @@ mod tests {
         async fn test_copy_to_folder_visitor(
             visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -186,13 +214,42 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
+        async fn test_copy_to_folder_visitor_batch(
+            visitor: CopyToFolderVisitor,
+            entry_name: String,
+            batch_records: Vec<Record>,
+        ) {
+            let result = visitor.visit(&entry_name, batch_records).await;
+            assert!(result.is_ok());
+
+            let file_path = PathBuf::from(&visitor.dst_folder)
+                .join(&entry_name)
+                .join("1234567891.html");
+            assert!(file_path.exists());
+            assert_eq!(
+                fs::read_to_string(file_path).await.unwrap(),
+                "Hello, World1!"
+            );
+
+            let file_path = PathBuf::from(&visitor.dst_folder)
+                .join(&entry_name)
+                .join("1234567892.html");
+            assert!(file_path.exists());
+            assert_eq!(
+                fs::read_to_string(file_path).await.unwrap(),
+                "Hello, World2!"
+            );
+        }
+
+        #[rstest]
+        #[tokio::test]
         async fn test_copy_to_folder_visitor_ext(
             mut visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
             visitor.ext = Some("md".to_string());
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -206,10 +263,10 @@ mod tests {
         async fn test_copy_to_folder_visitor_with_meta(
             mut visitor: CopyToFolderVisitor,
             entry_name: String,
-            record: Record,
+            records: Vec<Record>,
         ) {
             visitor.with_meta = true;
-            let result = visitor.visit(&entry_name, record).await;
+            let result = visitor.visit(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder.clone())
@@ -255,17 +312,22 @@ mod tests {
     async fn test_cp_bucket_to_folder(
         context: CliContext,
         #[future] bucket: String,
-        record: Record,
+        records: Vec<Record>,
     ) {
         let client = build_client(&context, "local").await.unwrap();
         let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
 
+        let timestamp = records[0].timestamp_us();
+        let content_type = records[0].content_type().to_string();
+        let labels = records[0].labels().clone();
+        let data = Bytes::from_static(b"Hello, World!");
+
         src_bucket
             .write_record("test")
-            .timestamp_us(record.timestamp_us())
-            .content_type(&*record.content_type().to_string())
-            .labels(record.labels().clone())
-            .data(record.bytes().await.unwrap())
+            .timestamp_us(timestamp)
+            .content_type(&*content_type)
+            .labels(labels)
+            .data(data)
             .send()
             .await
             .unwrap();
@@ -286,6 +348,65 @@ mod tests {
         assert_eq!(
             fs::read_to_string(file_path).await.unwrap(),
             "Hello, World!"
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_cp_bucket_to_folder_with_more_than_80_records(
+        context: CliContext,
+        #[future] bucket: String,
+        records: Vec<Record>,
+    ) {
+        let client = build_client(&context, "local").await.unwrap();
+        let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+
+        for i in 0..81 {
+            let timestamp = records[0].timestamp_us() + i;
+            let content_type = records[0].content_type().to_string();
+            let labels = records[0].labels().clone();
+            let data = Bytes::from(format!("Hello, World{}!", i));
+
+            src_bucket
+                .write_record("test")
+                .timestamp_us(timestamp)
+                .content_type(&*content_type)
+                .labels(labels)
+                .data(data)
+                .send()
+                .await
+                .unwrap();
+        }
+        let path = tempdir().unwrap().keep();
+        let args = cp_cmd()
+            .try_get_matches_from(vec![
+                "cp",
+                format!("local/{}", src_bucket.name()).as_str(),
+                format!("{}", path.to_string_lossy()).as_str(),
+            ])
+            .unwrap();
+
+        cp_bucket_to_folder(&context, &args).await.unwrap();
+
+        let file_path = path.join("test").join("1234567890.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World0!"
+        );
+
+        let file_path = path.join("test").join("1234567930.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World40!"
+        );
+
+        let file_path = path.join("test").join("1234567970.html");
+        assert!(file_path.exists());
+        assert_eq!(
+            fs::read_to_string(file_path).await.unwrap(),
+            "Hello, World80!"
         );
     }
 
@@ -311,13 +432,33 @@ mod tests {
     }
 
     #[fixture]
-    fn record() -> Record {
-        RecordBuilder::new()
+    fn records() -> Vec<Record> {
+        vec![RecordBuilder::new()
             .timestamp_us(1234567890)
             .data(Bytes::from_static(b"Hello, World!"))
             .content_type("text/html".to_string())
             .add_label("planet".to_string(), "Earth".to_string())
             .add_label("greeting".to_string(), "Hello".to_string())
-            .build()
+            .build()]
+    }
+
+    #[fixture]
+    fn batch_records() -> Vec<Record> {
+        vec![
+            RecordBuilder::new()
+                .timestamp_us(1234567891)
+                .data(Bytes::from_static(b"Hello, World1!"))
+                .content_type("text/html".to_string())
+                .add_label("planet".to_string(), "Mars".to_string())
+                .add_label("greeting".to_string(), "Hello1".to_string())
+                .build(),
+            RecordBuilder::new()
+                .timestamp_us(1234567892)
+                .data(Bytes::from_static(b"Hello, World2!"))
+                .content_type("text/html".to_string())
+                .add_label("planet".to_string(), "Jupiter".to_string())
+                .add_label("greeting".to_string(), "Hello2".to_string())
+                .build(),
+        ]
     }
 }
