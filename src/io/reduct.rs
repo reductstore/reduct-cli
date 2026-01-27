@@ -40,6 +40,13 @@ pub(crate) fn parse_url_and_token(
         Ok(alias) => (alias.url, alias.token),
         Err(_) => {
             if let Ok(mut url) = Url::parse(alias_or_url) {
+                let scheme = url.scheme();
+                if scheme != "http" && scheme != "https" {
+                    return Err(anyhow!(
+                        "'{}' isn't an alias or a valid HTTP URL",
+                        alias_or_url
+                    ));
+                }
                 let token = url.username().to_string();
                 url.set_username("").unwrap();
                 (url, token)

@@ -40,3 +40,6 @@ log = "0.4.28"
 rstest = "0.26.1"
 tempfile = "3.20.0"
 mockall = "0.13.1"
+
+[features]
+integration-tests = []

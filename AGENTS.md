@@ -14,6 +14,10 @@
 - `cargo test` — run unit tests embedded in modules.
 - `cargo fmt` — format code with rustfmt (standard Rust formatting).
 - `cargo clippy` — optional linting for common Rust issues.
+- ReductStore for integration tests (mirrors CI):
+  - `docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d reduct/store:latest`
+  - `docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d reduct/store:main`
+  - `RS_API_TOKEN=TOKEN cargo test -- --test-threads=1`
 
 ## Coding Style & Naming Conventions
 - Rust 2021 edition; keep code formatted with rustfmt.

@@ -1,8 +1,9 @@
-// Copyright 2023 ReductStore
+// Copyright 2023-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::bucket::helpers::print_bucket_status;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::helpers::timestamp_to_iso;
@@ -89,6 +90,11 @@ fn print_bucket(ctx: &CliContext, bucket: BucketInfo) -> anyhow::Result<()> {
     );
     output!(
         ctx,
+        "Status:              {}",
+        print_bucket_status(&bucket.status)
+    );
+    output!(
+        ctx,
         "Oldest Record (UTC): {}",
         timestamp_to_iso(bucket.oldest_record, bucket.entry_count == 0)
     );
@@ -123,9 +129,14 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
     );
     output!(
         ctx,
-        "Oldest Record (UTC): {:30} Max. Block Records: {}",
-        timestamp_to_iso(info.oldest_record, info.entry_count == 0),
+        "Status:              {:30} Max. Block Records: {}",
+        print_bucket_status(&info.status),
         settings.max_block_records.unwrap()
+    );
+    output!(
+        ctx,
+        "Oldest Record (UTC): {:30}",
+        timestamp_to_iso(info.oldest_record, info.entry_count == 0),
     );
     output!(
         ctx,
@@ -163,6 +174,7 @@ mod tests {
                 "Name:                test_bucket",
                 "Entries:             0",
                 "Size:                0 B",
+                "Status:              Ready",
                 "Oldest Record (UTC): ---",
                 "Latest Record (UTC): ---",
             ]
@@ -199,12 +211,17 @@ mod tests {
         assert_eq!(show_bucket(&context, &args).await.unwrap(), ());
         assert_eq!(
             context.stdout().history(),
-            vec!["Name:                test_bucket                    Quota Type:         NONE",
-                 "Entries:             1                              Quota Size:         0 B", "Size:                77 B                           Max. Block Size:    64.0 MB", "Oldest Record (UTC): 1970-01-01T00:00:00.000Z       Max. Block Records: 1024", "Latest Record (UTC): 1970-01-01T00:00:00.001Z      \n",
-                 "| Name | Records | Blocks | Size | Oldest Record (UTC)      | Latest Record (UTC)      |\n\
+            vec![
+                "Name:                test_bucket                    Quota Type:         NONE",
+                "Entries:             1                              Quota Size:         0 B",
+                "Size:                77 B                           Max. Block Size:    64.0 MB",
+                "Status:              Ready                          Max. Block Records: 1024",
+                "Oldest Record (UTC): 1970-01-01T00:00:00.000Z      ",
+                "Latest Record (UTC): 1970-01-01T00:00:00.001Z      \n",
+                "| Name | Records | Blocks | Size | Oldest Record (UTC)      | Latest Record (UTC)      |\n\
                  |------|---------|--------|------|--------------------------|--------------------------|\n\
-                 | test | 2       | 1      | 77 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |"]
-
+                 | test | 2       | 1      | 77 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
+            ]
         );
     }
 }
