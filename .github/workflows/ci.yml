@@ -80,6 +80,15 @@ jobs:
         run: |
           brew install ${{ matrix.compiler }}
 
+
+      - name: AWS Credentials and Cargo Cache
+        uses: ./.github/actions/aws-cargo-cache
+        with:
+          target: ${{ matrix.target }}
+          profile: release
+          access-key-id: ${{ secrets.S3_CACHE_ACCESS_KEY }}
+          secret-access-key: ${{ secrets.S3_CACHE_SECRET_KEY }}
+
       - name: Build binary
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
