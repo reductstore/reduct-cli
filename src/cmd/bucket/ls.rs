@@ -1,18 +1,17 @@
-// Copyright 2023 ReductStore
+// Copyright 2023-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::bucket::helpers::print_bucket_status;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::helpers::timestamp_to_iso;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-
 use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
-
 use reduct_rs::{BucketInfo, BucketInfoList};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
@@ -62,6 +61,8 @@ struct BucketTable {
     entry_count: u64,
     #[tabled(rename = "Size")]
     size: String,
+    #[tabled(rename = "Status")]
+    status: String,
     #[tabled(rename = "Oldest record (UTC)")]
     oldest_record: String,
     #[tabled(rename = "Latest record (UTC)")]
@@ -74,6 +75,7 @@ impl From<BucketInfo> for BucketTable {
             name: bucket.name,
             entry_count: bucket.entry_count,
             size: ByteSize(bucket.size).display().si().to_string(),
+            status: print_bucket_status(&bucket.status),
             oldest_record: timestamp_to_iso(bucket.oldest_record, bucket.entry_count == 0),
             latest_record: timestamp_to_iso(bucket.latest_record, bucket.entry_count == 0),
         }
@@ -140,14 +142,15 @@ mod tests {
 
         ls_bucket(&context, &args).await.unwrap();
 
-        assert_eq!(*context
-                       .stdout()
-                       .history()
-                       .get(0)
-                       .unwrap(),
-                   vec!["| Name          | Entries | Size | Oldest record (UTC)      | Latest record (UTC)      |",
-                        "|---------------|---------|------|--------------------------|--------------------------|",
-                        "| test_bucket   | 1       | 74 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
-                        "| test_bucket_2 | 0       | 0 B  | ---                      | ---                      |"].join("\n"));
+        assert_eq!(
+            *context.stdout().history().get(0).unwrap(),
+            vec![
+                "| Name          | Entries | Size | Status | Oldest record (UTC)      | Latest record (UTC)      |",
+                "|---------------|---------|------|--------|--------------------------|--------------------------|",
+                "| test_bucket   | 1       | 74 B | Ready  | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
+                "| test_bucket_2 | 0       | 0 B  | Ready  | ---                      | ---                      |",
+            ]
+            .join("\n")
+        );
     }
 }

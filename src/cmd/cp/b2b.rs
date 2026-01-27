@@ -38,15 +38,22 @@ impl CopyVisitor for CopyToBucketVisitor {
                 .send()
                 .await;
             if let Err(err) = res {
-                result.insert(timestamp, err);
+                if err.status() != ErrorCode::Conflict {
+                    result.insert(timestamp, err);
+                }
             }
             Ok(result)
         } else {
-            self.dst_bucket
+            let errors = self
+                .dst_bucket
                 .write_batch(entry_name)
                 .add_records(records)
                 .send()
-                .await
+                .await?;
+            Ok(errors
+                .into_iter()
+                .filter(|(_, err)| err.status() != ErrorCode::Conflict)
+                .collect())
         }
     }
 }

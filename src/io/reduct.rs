@@ -6,8 +6,7 @@
 use crate::config::find_alias;
 use crate::context::CliContext;
 use anyhow::anyhow;
-use colored::Colorize;
-use reduct_rs::{ErrorCode, ReductClient, ReductError, ServerInfo};
+use reduct_rs::ReductClient;
 use url::Url;
 
 /// Build a ReductStore client from an alias or URL
@@ -26,75 +25,7 @@ pub(crate) async fn build_client(
         .verify_ssl(!ctx.ignore_ssl())
         .timeout(ctx.timeout())
         .try_build()?;
-
-    match client.server_info().await {
-        Ok(status) => check_usage(url, status),
-        Err(ReductError {
-            status: ErrorCode::ConnectionError,
-            message,
-        }) => {
-            if url.scheme() == "https" {
-                // We can't connect to the server, so we try again with SSL verification disabled
-                // to see if that's the issue
-                let test_ssl_client = ReductClient::builder()
-                    .url(url.as_str())
-                    .verify_ssl(false) // Disable SSL verification
-                    .timeout(ctx.timeout())
-                    .try_build()?;
-
-                if test_ssl_client.alive().await.is_ok() {
-                    return Err(ReductError::new(
-                        ErrorCode::ConnectionError,
-                        &format!("Failed to connect to {} with SSL verification enabled. Try again with --ignore-ssl", url.as_str()),
-                    ).into());
-                }
-            }
-
-            return Err(ReductError::new(ErrorCode::ConnectionError, &message).into());
-        }
-        Err(err)
-            if err.status() == ErrorCode::ServiceUnavailable
-                || err.status() == ErrorCode::Unauthorized
-                || err.status() == ErrorCode::Forbidden =>
-        {
-            /* Ignore service unavailable errors for status checks. We still need to use the cli for health checks*/
-        }
-        Err(err) => return Err(err.into()),
-    };
-
     Ok(client)
-}
-
-fn check_usage(url: Url, status: ServerInfo) {
-    if let Some(license) = status.license {
-        if license.expiry_date < chrono::Utc::now() {
-            eprintln!(
-                "{}",
-                format!(
-                    "Warning: License for {} at expired at {}",
-                    url.as_str(),
-                    license.expiry_date
-                )
-                .yellow()
-                .bold()
-            );
-        }
-
-        const TB: u64 = 1000_000_000_000u64;
-        if license.disk_quota > 0 && status.usage > (license.disk_quota as u64 * TB) {
-            eprintln!(
-                "{}",
-                format!(
-                    "Warning: Disk usage of {} exceeds licensed quota of {} TB, currently at {} TB",
-                    url.as_str(),
-                    license.disk_quota,
-                    status.usage / TB
-                )
-                .yellow()
-                .bold()
-            );
-        }
-    }
 }
 
 /// Parse an alias or URL into a URL and a token
@@ -109,6 +40,13 @@ pub(crate) fn parse_url_and_token(
         Ok(alias) => (alias.url, alias.token),
         Err(_) => {
             if let Ok(mut url) = Url::parse(alias_or_url) {
+                let scheme = url.scheme();
+                if scheme != "http" && scheme != "https" {
+                    return Err(anyhow!(
+                        "'{}' isn't an alias or a valid HTTP URL",
+                        alias_or_url
+                    ));
+                }
                 let token = url.username().to_string();
                 url.set_username("").unwrap();
                 (url, token)

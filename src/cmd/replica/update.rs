@@ -269,6 +269,7 @@ mod tests {
                 each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
                 when: None,
+                mode: Default::default(),
             }
         }
     }

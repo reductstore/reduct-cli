@@ -53,6 +53,7 @@ mod tests {
             block_count: 0,
             oldest_record: 0,
             latest_record: 0,
+            status: Default::default(),
         };
 
         assert_eq!(query_remover.remove_records(entry).await.unwrap(), 1);
@@ -74,6 +75,7 @@ mod tests {
             block_count: 0,
             oldest_record: 0,
             latest_record: 0,
+            status: Default::default(),
         };
 
         assert_eq!(query_remover.remove_records(entry).await.unwrap(), 1);
@@ -92,6 +94,7 @@ mod tests {
             block_count: 0,
             oldest_record: 0,
             latest_record: 0,
+            status: Default::default(),
         };
 
         assert_eq!(
