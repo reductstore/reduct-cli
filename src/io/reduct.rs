@@ -6,8 +6,7 @@
 use crate::config::find_alias;
 use crate::context::CliContext;
 use anyhow::anyhow;
-use colored::Colorize;
-use reduct_rs::{ErrorCode, ReductClient, ReductError, ServerInfo};
+use reduct_rs::ReductClient;
 use url::Url;
 
 /// Build a ReductStore client from an alias or URL
@@ -27,38 +26,6 @@ pub(crate) async fn build_client(
         .timeout(ctx.timeout())
         .try_build()?;
     Ok(client)
-}
-
-fn check_usage(url: Url, status: ServerInfo) {
-    if let Some(license) = status.license {
-        if license.expiry_date < chrono::Utc::now() {
-            eprintln!(
-                "{}",
-                format!(
-                    "Warning: License for {} at expired at {}",
-                    url.as_str(),
-                    license.expiry_date
-                )
-                .yellow()
-                .bold()
-            );
-        }
-
-        const TB: u64 = 1000_000_000_000u64;
-        if license.disk_quota > 0 && status.usage > (license.disk_quota as u64 * TB) {
-            eprintln!(
-                "{}",
-                format!(
-                    "Warning: Disk usage of {} exceeds licensed quota of {} TB, currently at {} TB",
-                    url.as_str(),
-                    license.disk_quota,
-                    status.usage / TB
-                )
-                .yellow()
-                .bold()
-            );
-        }
-    }
 }
 
 /// Parse an alias or URL into a URL and a token

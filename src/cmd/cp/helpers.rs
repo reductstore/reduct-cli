@@ -11,7 +11,7 @@ use crate::parse::{fetch_and_filter_entries, QueryParams};
 use bytesize::ByteSize;
 use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{condition, Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
+use reduct_rs::{condition, Bucket, EntryInfo, QueryBuilder, Record, ReductError};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 
@@ -470,6 +470,7 @@ mod tests {
         use bytes::Bytes;
         use mockall::mock;
         use mockall::predicate::{always, eq};
+        use reduct_rs::ErrorCode;
 
         mock! {
             pub Visitor {}
