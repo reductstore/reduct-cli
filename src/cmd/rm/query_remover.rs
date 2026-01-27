@@ -1,4 +1,4 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -6,7 +6,7 @@
 use crate::cmd::rm::RemoveRecords;
 use crate::parse::QueryParams;
 use async_trait::async_trait;
-use reduct_rs::{Bucket, EntryInfo, RemoveQueryBuilder};
+use reduct_rs::{condition, Bucket, EntryInfo, RemoveQueryBuilder};
 
 /// Remove records from a bucket using a query
 pub(super) struct QueryRemover {
@@ -41,20 +41,21 @@ impl QueryRemover {
             query_builder = query_builder.stop_us(stop as u64);
         }
 
-        if let Some(each_n) = self.query_params.each_n {
-            query_builder = query_builder.each_n(each_n);
+        let mut when: serde_json::Value = self.query_params.when.clone().unwrap_or(condition!({}));
+        if let Some(obj) = when.as_object_mut() {
+            if let Some(each_n) = self.query_params.each_n {
+                obj.insert("$each_n".to_string(), serde_json::json!(each_n));
+            }
+            if let Some(each_s) = self.query_params.each_s {
+                obj.insert("$each_s".to_string(), serde_json::json!(each_s));
+            }
+            if let Some(limit) = self.query_params.limit {
+                obj.insert("$limit".to_string(), serde_json::json!(limit));
+            }
         }
 
-        if let Some(each_s) = self.query_params.each_s {
-            query_builder = query_builder.each_s(each_s);
-        }
-
-        if let Some(when) = &self.query_params.when {
-            query_builder = query_builder.when(when.clone());
-        }
-
+        query_builder = query_builder.when(when.clone());
         query_builder = query_builder.strict(self.query_params.strict);
-
         query_builder
     }
 }
@@ -95,6 +96,7 @@ mod tests {
             block_count: 0,
             oldest_record: 0,
             latest_record: 0,
+            status: Default::default(),
         };
 
         assert_eq!(query_remover.remove_records(entry).await.ok(), Some(1));

@@ -8,6 +8,7 @@ use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
 use crate::parse::ResourcePathParser;
 use clap::{Arg, Command};
+use reduct_rs::ReplicationSettings;
 
 pub(super) fn create_replica_cmd() -> Command {
     Command::new("create")
@@ -60,27 +61,23 @@ pub(super) async fn create_replica(
     let client = build_client(ctx, &alias_or_url).await?;
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
 
-    let mut builder = client
-        .create_replication(replication_name)
-        .src_bucket(source_bucket_name)
-        .dst_bucket(dest_bucket_name)
-        .dst_host(dest_url.as_str())
-        .dst_token(&token)
-        .entries(entries_filter);
+    let mut settings = ReplicationSettings::default();
+    settings.src_bucket = source_bucket_name.to_string();
+    settings.dst_bucket = dest_bucket_name.to_string();
+    settings.dst_host = dest_url.as_str().to_string();
+    settings.dst_token = Some(token);
+    settings.entries = entries_filter;
+    settings.each_n = each_n.copied();
+    settings.each_s = each_s.copied();
 
     if let Some(when) = when {
-        builder = builder.when(serde_json::from_str(&when)?);
+        settings.when = Some(serde_json::from_str(&when)?);
     }
-
-    if let Some(n) = each_n {
-        builder = builder.each_n(*n);
-    }
-
-    if let Some(s) = each_s {
-        builder = builder.each_s(*s);
-    }
-
-    builder.send().await?;
+    client
+        .create_replication(replication_name)
+        .set_settings(settings)
+        .send()
+        .await?;
     Ok(())
 }
 

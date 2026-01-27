@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use crate::parse::{fetch_and_filter_entries, QueryParams};
 use bytesize::ByteSize;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
+use reduct_rs::{condition, Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 
@@ -114,7 +114,7 @@ impl TransferProgress {
 }
 
 fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParams) -> QueryBuilder {
-    let mut query_builder = src_bucket.query(&entry.name);
+    let mut query_builder = src_bucket.query(entry.name.as_str());
     if let Some(start) = query_params.start {
         query_builder = query_builder.start_us(start);
     }
@@ -123,16 +123,17 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
         query_builder = query_builder.stop_us(stop);
     }
 
-    if let Some(each_n) = query_params.each_n {
-        query_builder = query_builder.each_n(each_n);
-    }
-
-    if let Some(each_s) = query_params.each_s {
-        query_builder = query_builder.each_s(each_s);
-    }
-
-    if let Some(when) = &query_params.when {
-        query_builder = query_builder.when(when.clone());
+    let mut when: serde_json::Value = query_params.when.clone().unwrap_or(condition!({}));
+    if let Some(obj) = when.as_object_mut() {
+        if let Some(each_n) = query_params.each_n {
+            obj.insert("$each_n".to_string(), serde_json::json!(each_n));
+        }
+        if let Some(each_s) = query_params.each_s {
+            obj.insert("$each_s".to_string(), serde_json::json!(each_s));
+        }
+        if let Some(limit) = query_params.limit {
+            obj.insert("$limit".to_string(), serde_json::json!(limit));
+        }
     }
 
     if let Some(ext) = &query_params.ext {
@@ -141,9 +142,7 @@ fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParam
 
     query_builder = query_builder.strict(query_params.strict);
 
-    if let Some(limit) = query_params.limit {
-        query_builder = query_builder.limit(limit);
-    }
+    query_builder = query_builder.when(when);
 
     query_builder.ttl(query_params.ttl)
 }
@@ -192,7 +191,7 @@ where
         let mut params = query_params.clone();
         let bucket = Arc::clone(&src_bucket);
         let mut timestamp = params.start.unwrap_or(entry.oldest_record);
-        let record_count = 0;
+        let mut record_count = 0;
         tasks.spawn(async move {
             let mut attempts = DOWNLOAD_ATTEMPTS;
             while attempts > 0 {
@@ -229,35 +228,112 @@ where
 
                 tokio::pin!(record_stream);
 
-                let records_stack = get_one_or_batch_records(
-                    record_stream,
-                    &mut transfer_progress,
-                    &mut params,
-                    timestamp,
-                    record_count,
-                    &mut attempts,
-                )
-                .await;
-                // for records in records_stack? {
-                for records in records_stack?.iter_mut() {
-                    let record = records.last().unwrap();
-                    timestamp = record.timestamp_us();
-                    let content_length = record.content_length() as u64;
-                    let empty_vec = Vec::new();
-                    let taken_records = std::mem::replace(records, empty_vec);
-                    let errors = local_visitor.visit(&entry.name, taken_records).await;
-                    if let Some((_, err)) = errors?.pop_first() {
-                        return print_error_progress!(err);
+                let mut number = NUMBER_DOWNLOAD_LIMIT;
+                let mut memory = MEMORY_AMOUNT_LIMIT;
+                let mut batch: Vec<Record> = Vec::new();
+                let mut retry = false;
+
+                while let Some(record) = record_stream.next().await {
+                    let record = match record {
+                        Ok(record) => record,
+                        Err(err) => {
+                            if let Err(e) = make_attempt(
+                                &mut attempts,
+                                &mut transfer_progress,
+                                &mut params,
+                                record_count,
+                                timestamp,
+                                err,
+                            )
+                            .await
+                            {
+                                return print_error_progress!(e);
+                            } else {
+                                retry = true;
+                                break;
+                            }
+                        }
+                    };
+
+                    let content_length = record.content_length() as isize;
+                    if content_length >= MEMORY_AMOUNT_LIMIT {
+                        if let Err(err) = flush_batch(
+                            &entry.name,
+                            &mut batch,
+                            local_visitor.as_ref(),
+                            &mut transfer_progress,
+                            &mut attempts,
+                            &mut timestamp,
+                            &mut record_count,
+                        )
+                        .await
+                        {
+                            return print_error_progress!(err);
+                        }
+                        batch.push(record);
+                        if let Err(err) = flush_batch(
+                            &entry.name,
+                            &mut batch,
+                            local_visitor.as_ref(),
+                            &mut transfer_progress,
+                            &mut attempts,
+                            &mut timestamp,
+                            &mut record_count,
+                        )
+                        .await
+                        {
+                            return print_error_progress!(err);
+                        }
+                        number = NUMBER_DOWNLOAD_LIMIT;
+                        memory = MEMORY_AMOUNT_LIMIT;
+                        continue;
                     }
 
-                    transfer_progress.update(timestamp, content_length);
-                    sleep(Duration::from_micros(5)).await;
-                    attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
+                    memory -= content_length;
+                    if memory < 0 || number == 0 {
+                        if let Err(err) = flush_batch(
+                            &entry.name,
+                            &mut batch,
+                            local_visitor.as_ref(),
+                            &mut transfer_progress,
+                            &mut attempts,
+                            &mut timestamp,
+                            &mut record_count,
+                        )
+                        .await
+                        {
+                            return print_error_progress!(err);
+                        }
+                        batch.push(record);
+                        number = NUMBER_DOWNLOAD_LIMIT.saturating_sub(1);
+                        memory = MEMORY_AMOUNT_LIMIT - content_length;
+                    } else if number == NUMBER_DOWNLOAD_LIMIT {
+                        batch.push(record);
+                        number -= 1;
+                    } else {
+                        batch.push(record);
+                        number -= 1;
+                    }
                 }
 
-                if attempts == DOWNLOAD_ATTEMPTS {
-                    transfer_progress.done();
-                    break;
+                if !retry {
+                    if let Err(err) = flush_batch(
+                        &entry.name,
+                        &mut batch,
+                        local_visitor.as_ref(),
+                        &mut transfer_progress,
+                        &mut attempts,
+                        &mut timestamp,
+                        &mut record_count,
+                    )
+                    .await
+                    {
+                        return print_error_progress!(err);
+                    }
+                    if attempts == DOWNLOAD_ATTEMPTS {
+                        transfer_progress.done();
+                        break;
+                    }
                 }
             }
 
@@ -272,57 +348,38 @@ where
     Ok(())
 }
 
-async fn get_one_or_batch_records(
-    mut record_stream: impl Stream<Item = Result<Record, ReductError>> + Unpin,
-    mut transfer_progress: &mut TransferProgress,
-    mut params: &mut QueryParams,
-    timestamp: u64,
-    record_count: u64,
-    mut attempts: &mut u8,
-) -> Result<Vec<Vec<Record>>, ReductError> {
-    let mut number = NUMBER_DOWNLOAD_LIMIT;
-    let mut memory = MEMORY_AMOUNT_LIMIT;
-    let mut records_stack: Vec<Vec<Record>> = Vec::new();
-
-    while let Some(record) = record_stream.next().await {
-        if let Err(err) = record {
-            if let Err(e) = make_attempt(
-                &mut attempts,
-                &mut transfer_progress,
-                &mut params,
-                record_count,
-                timestamp,
-                err,
-            )
-            .await
-            {
-                return Err(e);
-            } else {
-                break;
-            }
-        }
-
-        let record = record.unwrap();
-        let content_lenght: isize = record.content_length() as isize;
-        if content_lenght >= MEMORY_AMOUNT_LIMIT {
-            records_stack.push(vec![record]);
-        } else {
-            memory = memory - content_lenght;
-            if memory < 0 || number == 0 {
-                records_stack.push(vec![record]);
-                //reset limits
-                number = NUMBER_DOWNLOAD_LIMIT;
-                memory = MEMORY_AMOUNT_LIMIT;
-            } else if number == NUMBER_DOWNLOAD_LIMIT {
-                records_stack.push(vec![record]);
-                number = number - 1;
-            } else {
-                let next_records = records_stack.last_mut().unwrap();
-                next_records.push(record);
-            }
-        }
+async fn flush_batch<V: CopyVisitor + ?Sized>(
+    entry_name: &str,
+    batch: &mut Vec<Record>,
+    visitor: &V,
+    transfer_progress: &mut TransferProgress,
+    attempts: &mut u8,
+    timestamp: &mut u64,
+    record_count: &mut u64,
+) -> Result<(), ReductError> {
+    if batch.is_empty() {
+        return Ok(());
     }
-    Ok(records_stack)
+
+    let batch_info = batch
+        .iter()
+        .map(|record| (record.timestamp_us(), record.content_length() as u64))
+        .collect::<Vec<_>>();
+    let taken_records = std::mem::take(batch);
+    let errors = visitor.visit(entry_name, taken_records).await?;
+    if let Some((_, err)) = errors.into_iter().next() {
+        return Err(err);
+    }
+
+    for (ts, len) in batch_info {
+        *record_count += 1;
+        *timestamp = ts;
+        transfer_progress.update(ts, len);
+        sleep(Duration::from_micros(5)).await;
+    }
+
+    *attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
+    Ok(())
 }
 
 // Decrement attempts and retry on failure
@@ -405,6 +462,7 @@ mod tests {
     use super::*;
 
     mod downloading {
+        use super::*;
         use crate::context::tests::{bucket, context};
         use crate::context::CliContext;
         use crate::io::reduct::build_client;
@@ -412,9 +470,6 @@ mod tests {
         use bytes::Bytes;
         use mockall::mock;
         use mockall::predicate::{always, eq};
-        use reduct_rs::Labels;
-
-        use super::*;
 
         mock! {
             pub Visitor {}
