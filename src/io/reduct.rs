@@ -26,42 +26,6 @@ pub(crate) async fn build_client(
         .verify_ssl(!ctx.ignore_ssl())
         .timeout(ctx.timeout())
         .try_build()?;
-
-    match client.server_info().await {
-        Ok(status) => check_usage(url, status),
-        Err(ReductError {
-            status: ErrorCode::ConnectionError,
-            message,
-        }) => {
-            if url.scheme() == "https" {
-                // We can't connect to the server, so we try again with SSL verification disabled
-                // to see if that's the issue
-                let test_ssl_client = ReductClient::builder()
-                    .url(url.as_str())
-                    .verify_ssl(false) // Disable SSL verification
-                    .timeout(ctx.timeout())
-                    .try_build()?;
-
-                if test_ssl_client.alive().await.is_ok() {
-                    return Err(ReductError::new(
-                        ErrorCode::ConnectionError,
-                        &format!("Failed to connect to {} with SSL verification enabled. Try again with --ignore-ssl", url.as_str()),
-                    ).into());
-                }
-            }
-
-            return Err(ReductError::new(ErrorCode::ConnectionError, &message).into());
-        }
-        Err(err)
-            if err.status() == ErrorCode::ServiceUnavailable
-                || err.status() == ErrorCode::Unauthorized
-                || err.status() == ErrorCode::Forbidden =>
-        {
-            /* Ignore service unavailable errors for status checks. We still need to use the cli for health checks*/
-        }
-        Err(err) => return Err(err.into()),
-    };
-
     Ok(client)
 }
 
