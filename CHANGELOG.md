@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Add batching in reduct-cli for cp command, [PR-148](https://github.com/reductstore/reduct-cli/pull/148)
+- Show bucket status and update copy/removal handling, [PR-167](https://github.com/reductstore/reduct-cli/pull/167)
 
 ## 0.9.4 - 2025-12-17
 
