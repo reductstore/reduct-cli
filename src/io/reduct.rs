@@ -1,4 +1,4 @@
-// Copyright 2023 ReductStore
+// Copyright 2023-2025 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -7,7 +7,7 @@ use crate::config::find_alias;
 use crate::context::CliContext;
 use anyhow::anyhow;
 use colored::Colorize;
-use reduct_rs::{ErrorCode, ReductClient, ReductError};
+use reduct_rs::{ErrorCode, ReductClient, ReductError, ServerInfo};
 use url::Url;
 
 /// Build a ReductStore client from an alias or URL
@@ -27,8 +27,8 @@ pub(crate) async fn build_client(
         .timeout(ctx.timeout())
         .try_build()?;
 
-    let status = match client.server_info().await {
-        Ok(status) => status,
+    match client.server_info().await {
+        Ok(status) => check_usage(url, status),
         Err(ReductError {
             status: ErrorCode::ConnectionError,
             message,
@@ -52,9 +52,20 @@ pub(crate) async fn build_client(
 
             return Err(ReductError::new(ErrorCode::ConnectionError, &message).into());
         }
+        Err(err)
+            if err.status() == ErrorCode::ServiceUnavailable
+                || err.status() == ErrorCode::Unauthorized
+                || err.status() == ErrorCode::Forbidden =>
+        {
+            /* Ignore service unavailable errors for status checks. We still need to use the cli for health checks*/
+        }
         Err(err) => return Err(err.into()),
     };
 
+    Ok(client)
+}
+
+fn check_usage(url: Url, status: ServerInfo) {
     if let Some(license) = status.license {
         if license.expiry_date < chrono::Utc::now() {
             eprintln!(
@@ -84,8 +95,6 @@ pub(crate) async fn build_client(
             );
         }
     }
-
-    Ok(client)
 }
 
 /// Parse an alias or URL into a URL and a token
@@ -128,14 +137,8 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_build_client_with_url(context: CliContext) {
-        let err = build_client(&context, "http://localhost:8383")
-            .await
-            .err()
-            .unwrap();
-        assert_eq!(
-            err.to_string(),
-            "[Unauthorized] No bearer token in request header"
-        );
+        let result = build_client(&context, "http://localhost:8383").await;
+        assert!(result.is_ok());
     }
 
     #[rstest]

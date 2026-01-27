@@ -62,17 +62,3 @@ pub(crate) fn make_ext_arg() -> Arg {
         .help("Pass additional parameters to extensions in JSON format.")
         .required(false)
 }
-
-pub(crate) fn parse_label(label: &str) -> anyhow::Result<(String, String)> {
-    let mut label = label.splitn(2, '=');
-    Ok((
-        label
-            .next()
-            .ok_or(anyhow::anyhow!("Invalid label"))?
-            .to_string(),
-        label
-            .next()
-            .ok_or(anyhow::anyhow!("Invalid label"))?
-            .to_string(),
-    ))
-}

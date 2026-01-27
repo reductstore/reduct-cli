@@ -7,7 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Add batching in reduct-cli for cp command
+### Changed
+
+- Add batching in reduct-cli for cp command, [PR-148](https://github.com/reductstore/reduct-cli/pull/148)
+
+## 0.9.4 - 2025-12-17
+
+### Changes
+
+- Update reduct-rs to 1.17.2 with cookie jar support
+
+## [0.9.3] - 2025-10-20
+
+### Changed
+
+- Update reduct-rs to 1.17.0 and other dependencies
+
+## [0.9.2] - 2025-10-08
+
+## Fixed
+
+- Ignore 401,403 and 503 errors during license check, [PR-146](https://github.com/reductstore/reduct-cli/pull/146)
+
+## [0.9.1] - 2025-10-07
+
+### Fixed
+
+- Fix compatibility break in replication settings v1.17, [PR-145](https://github.com/reductstore/reduct-cli/pull/145)
 
 ## [0.9.0] - 2025-08-26
 
@@ -119,7 +145,15 @@ RS-633: Link runtime libraries statically, [PR-85](https://github.com/reductstor
 
 - Moved from https://github.com/reductstore/reductstore
 
-[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.8.0...HEAD
+[Unreleased]: https://github.com/reductstore/reduct-cli/compare/0.9.3...HEAD
+
+[0.9.3]: https://github.com/reductstore/reduct-cli/compare/v0.9.2...v0.9.3
+
+[0.9.2]: https://github.com/reductstore/reduct-cli/compare/v0.9.1...v0.9.2
+
+[0.9.1]: https://github.com/reductstore/reduct-cli/compare/v0.9.0...v0.9.1
+
+[0.9.0]: https://github.com/reductstore/reduct-cli/compare/v0.8.0...v0.9.0
 
 [0.8.0]: https://github.com/reductstore/reduct-cli/compare/v0.7.0...v0.8.0
 
