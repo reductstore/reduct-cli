@@ -14,17 +14,27 @@ Create a PR using the standardized template from reductstore/.github, then recor
 ### 1) Preconditions
 - Ensure `gh auth status` is logged in and the current branch is the intended PR branch.
 - Ensure the working tree is clean (or only the intended changes are present).
+- Use context from the current conversation to infer intent, scope, and any constraints.
 
-### 2) Fetch the PR template
+### 2) Understand changes and rationale
+- Compare the current branch against `main` to understand what changed and why (use this to derive the PR title, description, and rationale):
+  - `git fetch origin main`
+  - `git log --oneline origin/main..HEAD`
+  - `git diff --stat origin/main...HEAD`
+  - `git diff origin/main...HEAD`
+- If the branch name starts with an issue number (e.g., `123-...`), use that issue in the rationale and fill the `Closes #` line in the PR template.
+- If the branch name does not include an issue number, infer the likely issue from changes and conversation context, or leave `Closes #` empty if unsure.
+
+### 3) Fetch the PR template
 Use the helper script to download the latest PR template from reductstore/.github:
 
 ```bash
 ./.codex/skills/create-pr/scripts/fetch_pr_template.sh /tmp/pr_template.md
 ```
 
-Fill in the template file with the relevant summary, testing, and rationale.
+Fill in the template file with the relevant summary, testing, and rationale derived from the diff and conversation context.
 
-### 3) Create the PR with gh
+### 4) Create the PR with gh
 Use the filled template as the PR body:
 
 ```bash
@@ -37,12 +47,12 @@ Capture the PR number after creation:
 gh pr view --json number -q .number
 ```
 
-### 4) Update CHANGELOG.md
+### 5) Update CHANGELOG.md
 - Find the appropriate section (usually the most recent/unreleased section).
 - Add a new entry following the existing style in the file.
 - Include the PR ID as `#<number>` exactly as prior entries do.
 
-### 5) Commit (no push)
+### 6) Commit (no push)
 Stage and commit the changelog update only:
 
 ```bash
