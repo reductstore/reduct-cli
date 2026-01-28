@@ -3,13 +3,13 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
+use crate::cmd::cp::helpers::{start_loading_with_entry_start_overrides, CopyVisitor};
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 struct CopyToBucketVisitor {
@@ -69,6 +69,10 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         .unwrap();
 
     let query_params = parse_query_params(ctx, &args)?;
+    let from_last = args.get_flag("from-last");
+    if from_last && args.get_one::<String>("start").is_some() {
+        return Err(anyhow::anyhow!("--from-last can't be used with --start"));
+    }
 
     let src_bucket = build_client(ctx, &src_instance)
         .await?
@@ -96,7 +100,28 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         dst_bucket: Arc::new(dst_bucket),
     };
 
-    start_loading(src_bucket, query_params, dst_bucket_visitor).await
+    let entry_start_overrides = if from_last {
+        Some(build_entry_start_overrides(dst_bucket_visitor.dst_bucket.as_ref()).await?)
+    } else {
+        None
+    };
+
+    start_loading_with_entry_start_overrides(
+        src_bucket,
+        query_params,
+        entry_start_overrides,
+        dst_bucket_visitor,
+    )
+    .await
+}
+
+async fn build_entry_start_overrides(dst_bucket: &Bucket) -> anyhow::Result<HashMap<String, u64>> {
+    let mut overrides = HashMap::new();
+    for entry in dst_bucket.entries().await? {
+        let start = entry.latest_record.saturating_add(1);
+        overrides.insert(entry.name, start);
+    }
+    Ok(overrides)
 }
 
 #[cfg(test)]
@@ -285,6 +310,87 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(record.bytes().await.unwrap(), Bytes::from_static(b"test80"));
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_cp_bucket_to_bucket_from_last_with_limit(
+            context: CliContext,
+            #[future] bucket: String,
+            #[future] bucket2: String,
+        ) {
+            let client = build_client(&context, "local").await.unwrap();
+            let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+            let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
+
+            src_bucket
+                .write_record("test")
+                .timestamp_us(100)
+                .data(Bytes::from_static(b"src-old"))
+                .send()
+                .await
+                .unwrap();
+            src_bucket
+                .write_record("test")
+                .timestamp_us(200)
+                .data(Bytes::from_static(b"src-new"))
+                .send()
+                .await
+                .unwrap();
+
+            dst_bucket
+                .write_record("test")
+                .timestamp_us(100)
+                .data(Bytes::from_static(b"dst-old"))
+                .send()
+                .await
+                .unwrap();
+
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    format!("local/{}", src_bucket.name()).as_str(),
+                    format!("local/{}", dst_bucket.name()).as_str(),
+                    "--from-last",
+                    "--limit",
+                    "1",
+                ])
+                .unwrap();
+
+            cp_bucket_to_bucket(&context, &args).await.unwrap();
+
+            let record = dst_bucket
+                .read_record("test")
+                .timestamp_us(200)
+                .send()
+                .await
+                .unwrap();
+            assert_eq!(
+                record.bytes().await.unwrap(),
+                Bytes::from_static(b"src-new")
+            );
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_cp_bucket_to_bucket_from_last_with_start_rejected(
+            context: CliContext,
+            #[future] bucket: String,
+            #[future] bucket2: String,
+        ) {
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    format!("local/{}", bucket.await).as_str(),
+                    format!("local/{}", bucket2.await).as_str(),
+                    "--from-last",
+                    "--start",
+                    "10",
+                ])
+                .unwrap();
+
+            let result = cp_bucket_to_bucket(&context, &args).await;
+            assert!(result.is_err());
         }
     }
 

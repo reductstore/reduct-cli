@@ -151,6 +151,12 @@ impl CopyToFolderVisitor {
 }
 
 pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
+    if args.get_flag("from-last") {
+        return Err(anyhow::anyhow!(
+            "--from-last is only supported for bucket-to-bucket copy"
+        ));
+    }
+
     let (src_instance, src_bucket) = args
         .get_one::<(String, String)>("SOURCE_BUCKET_OR_FOLDER")
         .map(|(src_instance, src_bucket)| (src_instance.clone(), src_bucket.clone()))
