@@ -111,6 +111,18 @@ jobs:
         reductstore_version: [ "latest", "main" ]
     steps:
       - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ vars.MINIMAL_RUST_VERSION }}
+
+      - name: AWS Credentials and Cargo Cache
+        uses: ./.github/actions/aws-cargo-cache
+        with:
+          target: x86_64-unknown-linux-gnu
+          profile: ci
+          access-key-id: ${{ secrets.S3_CACHE_ACCESS_KEY }}
+          secret-access-key: ${{ secrets.S3_CACHE_SECRET_KEY }}
       - name: Run ReductStore
         run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{env.REGISTRY_IMAGE}}:${{matrix.reductstore_version}}
       - name: Run Client CLI tests
