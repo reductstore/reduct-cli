@@ -14,7 +14,7 @@ pub(crate) fn timestamp_to_iso(timestamp: u64, mask: bool) -> String {
         "---".to_string()
     } else {
         dt.unwrap_or(DateTime::<Utc>::MIN_UTC)
-            .format("%Y-%m-%dT%H:%M:%S%.3fZ")
+            .format("%Y-%m-%dT%H:%M:%SZ")
             .to_string()
     }
 }

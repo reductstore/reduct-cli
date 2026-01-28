@@ -4,7 +4,6 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::bucket::helpers::print_bucket_status;
-use crate::cmd::table::{build_info_table, labeled_cell, record_range_cells};
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
@@ -13,6 +12,8 @@ use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::BucketInfoList;
+use tabled::settings::Style;
+use tabled::{Table, Tabled};
 
 pub(super) fn ls_bucket_cmd() -> Command {
     Command::new("ls")
@@ -51,36 +52,70 @@ fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
     }
 }
 
+#[derive(Tabled)]
+struct BucketRow {
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Entries")]
+    entries: u64,
+    #[tabled(rename = "Size")]
+    size: String,
+    #[tabled(rename = "Status")]
+    status: String,
+    #[tabled(rename = "Provisioned")]
+    provisioned: String,
+    #[tabled(rename = "Oldest Record (UTC)")]
+    oldest_record: String,
+    #[tabled(rename = "Latest Record (UTC)")]
+    latest_record: String,
+}
+
+fn record_range_values(oldest: u64, latest: u64, is_empty: bool) -> (String, String) {
+    let cells = crate::cmd::table::record_range_cells(oldest, latest, is_empty);
+    let oldest_value = cells
+        .get(0)
+        .and_then(|cell| cell.split_once(": "))
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    let latest_value = cells
+        .get(2)
+        .and_then(|cell| cell.split_once(": "))
+        .map(|(_, value)| value.to_string())
+        .unwrap_or_default();
+    (oldest_value, latest_value)
+}
+
 fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
-    let mut info_cells = Vec::new();
-    let buckets = bucket_list.buckets;
-    let total = buckets.len();
-
-    for (idx, bucket) in buckets.into_iter().enumerate() {
-        info_cells.push(labeled_cell("Name", bucket.name.clone()));
-        info_cells.push(labeled_cell("Entries", bucket.entry_count));
-        info_cells.push(labeled_cell(
-            "Size",
-            ByteSize(bucket.size).display().si().to_string(),
-        ));
-        info_cells.push(labeled_cell("Status", print_bucket_status(&bucket.status)));
-        info_cells.extend(record_range_cells(
-            bucket.oldest_record,
-            bucket.latest_record,
-            bucket.entry_count == 0,
-        ));
-
-        if idx + 1 < total {
-            info_cells.push(String::new());
-            info_cells.push(String::new());
-        }
-    }
-
-    if info_cells.is_empty() {
+    if bucket_list.buckets.is_empty() {
         return;
     }
 
-    let table = build_info_table(info_cells);
+    let rows = bucket_list
+        .buckets
+        .into_iter()
+        .map(|bucket| {
+            let (oldest_record, latest_record) = record_range_values(
+                bucket.oldest_record,
+                bucket.latest_record,
+                bucket.entry_count == 0,
+            );
+            BucketRow {
+                name: bucket.name,
+                entries: bucket.entry_count,
+                size: ByteSize(bucket.size).display().si().to_string(),
+                status: print_bucket_status(&bucket.status),
+                provisioned: if bucket.is_provisioned {
+                    "✓".to_string()
+                } else {
+                    "-".to_string()
+                },
+                oldest_record,
+                latest_record,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let table = Table::new(rows).with(Style::markdown()).to_string();
     output!(ctx, "{}", table);
 }
 
@@ -137,22 +172,31 @@ mod tests {
 
         ls_bucket(&context, &args).await.unwrap();
 
-        let mut expected_cells = vec![
-            labeled_cell("Name", "test_bucket"),
-            labeled_cell("Entries", 1),
-            labeled_cell("Size", "74 B"),
-            labeled_cell("Status", "Ready"),
+        let (oldest_record, latest_record) = record_range_values(0, 1000, false);
+        let (oldest_record_2, latest_record_2) = record_range_values(0, 0, true);
+        let expected_rows = vec![
+            BucketRow {
+                name: "test_bucket".to_string(),
+                entries: 1,
+                size: "74 B".to_string(),
+                status: "✅ Ready".to_string(),
+                provisioned: "-".to_string(),
+                oldest_record,
+                latest_record,
+            },
+            BucketRow {
+                name: "test_bucket_2".to_string(),
+                entries: 0,
+                size: "0 B".to_string(),
+                status: "✅ Ready".to_string(),
+                provisioned: "-".to_string(),
+                oldest_record: oldest_record_2,
+                latest_record: latest_record_2,
+            },
         ];
-        expected_cells.extend(record_range_cells(0, 1000, false));
-        expected_cells.push(String::new());
-        expected_cells.push(String::new());
-        expected_cells.push(labeled_cell("Name", "test_bucket_2"));
-        expected_cells.push(labeled_cell("Entries", 0));
-        expected_cells.push(labeled_cell("Size", "0 B"));
-        expected_cells.push(labeled_cell("Status", "Ready"));
-        expected_cells.extend(record_range_cells(0, 0, true));
-
-        let expected_table = build_info_table(expected_cells);
+        let expected_table = Table::new(expected_rows)
+            .with(Style::markdown())
+            .to_string();
 
         assert_eq!(context.stdout().history(), vec![expected_table]);
     }
