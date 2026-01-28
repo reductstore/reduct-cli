@@ -4,6 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::bucket::helpers::print_bucket_status;
+use crate::cmd::table::{build_info_table, labeled_cell, record_range_cells};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::helpers::timestamp_to_iso;
@@ -81,68 +82,60 @@ pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::
 }
 
 fn print_bucket(ctx: &CliContext, bucket: BucketInfo) -> anyhow::Result<()> {
-    output!(ctx, "Name:                {}", bucket.name);
-    output!(ctx, "Entries:             {}", bucket.entry_count);
-    output!(
-        ctx,
-        "Size:                {}",
-        ByteSize(bucket.size).display().si()
-    );
-    output!(
-        ctx,
-        "Status:              {}",
-        print_bucket_status(&bucket.status)
-    );
-    output!(
-        ctx,
-        "Oldest Record (UTC): {}",
-        timestamp_to_iso(bucket.oldest_record, bucket.entry_count == 0)
-    );
-    output!(
-        ctx,
-        "Latest Record (UTC): {}",
-        timestamp_to_iso(bucket.latest_record, bucket.entry_count == 0)
-    );
+    let mut info_cells = vec![
+        labeled_cell("Name", bucket.name),
+        labeled_cell("Entries", bucket.entry_count),
+        labeled_cell("Size", ByteSize(bucket.size).display().si().to_string()),
+        labeled_cell("Status", print_bucket_status(&bucket.status)),
+    ];
+    info_cells.extend(record_range_cells(
+        bucket.oldest_record,
+        bucket.latest_record,
+        bucket.entry_count == 0,
+    ));
+
+    let info_table = build_info_table(info_cells);
+
+    output!(ctx, "{}", info_table);
+    output!(ctx, "");
     Ok(())
 }
 
 fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
     let settings = bucket.settings;
     let info = bucket.info;
-    output!(
-        ctx,
-        "Name:                {:30} Quota Type:         {}",
-        info.name,
-        settings.quota_type.unwrap()
-    );
-    output!(
-        ctx,
-        "Entries:             {:<30} Quota Size:         {}",
-        info.entry_count,
-        ByteSize(settings.quota_size.unwrap()).display().si()
-    );
-    output!(
-        ctx,
-        "Size:                {:30} Max. Block Size:    {}",
-        ByteSize(info.size).display().si().to_string(),
-        ByteSize(settings.max_block_size.unwrap()).display().si()
-    );
-    output!(
-        ctx,
-        "Status:              {:30} Max. Block Records: {}",
-        print_bucket_status(&info.status),
-        settings.max_block_records.unwrap()
-    );
-    output!(
-        ctx,
-        "Oldest Record (UTC): {:30}",
-        timestamp_to_iso(info.oldest_record, info.entry_count == 0),
-    );
-    output!(
-        ctx,
-        "Latest Record (UTC): {:30}\n",
-        timestamp_to_iso(info.latest_record, info.entry_count == 0)
-    );
+    let mut info_cells = vec![
+        labeled_cell("Name", info.name),
+        labeled_cell("Quota Type", settings.quota_type.unwrap()),
+        labeled_cell("Entries", info.entry_count),
+        labeled_cell(
+            "Quota Size",
+            ByteSize(settings.quota_size.unwrap())
+                .display()
+                .si()
+                .to_string(),
+        ),
+        labeled_cell("Size", ByteSize(info.size).display().si().to_string()),
+        labeled_cell(
+            "Max. Block Size",
+            ByteSize(settings.max_block_size.unwrap())
+                .display()
+                .si()
+                .to_string(),
+        ),
+        labeled_cell("Status", print_bucket_status(&info.status)),
+        labeled_cell("Max. Block Records", settings.max_block_records.unwrap()),
+    ];
+    info_cells.extend(record_range_cells(
+        info.oldest_record,
+        info.latest_record,
+        info.entry_count == 0,
+    ));
+
+    let info_table = build_info_table(info_cells);
+
+    output!(ctx, "{}", info_table);
+    output!(ctx, "");
 
     let entries = bucket.entries.into_iter().map(EntryTable::from);
     let table = Table::new(entries).with(Style::markdown()).to_string();
@@ -168,16 +161,18 @@ mod tests {
             .get_matches_from(vec!["show", format!("local/{}", bucket_name).as_str()]);
 
         assert_eq!(show_bucket(&context, &args).await.unwrap(), ());
+        let mut expected_cells = vec![
+            labeled_cell("Name", "test_bucket"),
+            labeled_cell("Entries", 0),
+            labeled_cell("Size", "0 B"),
+            labeled_cell("Status", "Ready"),
+        ];
+        expected_cells.extend(record_range_cells(0, 0, true));
+        let expected_info_table = build_info_table(expected_cells);
+
         assert_eq!(
             context.stdout().history(),
-            vec![
-                "Name:                test_bucket",
-                "Entries:             0",
-                "Size:                0 B",
-                "Status:              Ready",
-                "Oldest Record (UTC): ---",
-                "Latest Record (UTC): ---",
-            ]
+            vec![expected_info_table, String::new()]
         );
     }
 
@@ -209,18 +204,26 @@ mod tests {
         ]);
 
         assert_eq!(show_bucket(&context, &args).await.unwrap(), ());
+        let mut expected_cells = vec![
+            labeled_cell("Name", "test_bucket"),
+            labeled_cell("Quota Type", "NONE"),
+            labeled_cell("Entries", 1),
+            labeled_cell("Quota Size", "0 B"),
+            labeled_cell("Size", "77 B"),
+            labeled_cell("Max. Block Size", "64.0 MB"),
+            labeled_cell("Status", "Ready"),
+            labeled_cell("Max. Block Records", 1024),
+        ];
+        expected_cells.extend(record_range_cells(0, 1000, false));
+        let expected_info_table = build_info_table(expected_cells);
+
         assert_eq!(
             context.stdout().history(),
             vec![
-                "Name:                test_bucket                    Quota Type:         NONE",
-                "Entries:             1                              Quota Size:         0 B",
-                "Size:                77 B                           Max. Block Size:    64.0 MB",
-                "Status:              Ready                          Max. Block Records: 1024",
-                "Oldest Record (UTC): 1970-01-01T00:00:00.000Z      ",
-                "Latest Record (UTC): 1970-01-01T00:00:00.001Z      \n",
-                "| Name | Records | Blocks | Size | Oldest Record (UTC)      | Latest Record (UTC)      |\n\
-                 |------|---------|--------|------|--------------------------|--------------------------|\n\
-                 | test | 2       | 1      | 77 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
+                expected_info_table,
+                String::new(),
+                "| Name | Records | Blocks | Size | Oldest Record (UTC)      | Latest Record (UTC)      |\n|------|---------|--------|------|--------------------------|--------------------------|\n| test | 2       | 1      | 77 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |"
+                    .to_string(),
             ]
         );
     }

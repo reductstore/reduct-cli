@@ -1,13 +1,14 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::replica::helpers::print_replication_mode;
+use crate::cmd::table::{build_info_table, labeled_cell};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
 use clap::{Arg, Command};
-use serde_json::json;
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -42,54 +43,34 @@ pub(super) async fn show_replica_handler(
     let client = build_client(ctx, alias_or_url).await?;
 
     let replica = client.get_replication(replication_name).await?;
-    output!(
-        ctx,
-        "Name:                {:20} Source Bucket:         {}",
-        replica.info.name,
-        replica.settings.src_bucket
-    );
-    output!(
-        ctx,
-        "Active:              {:20} Destination Bucket:    {}",
-        replica.info.is_active,
-        replica.settings.dst_bucket
-    );
 
-    output!(
-        ctx,
-        "Provisioned:         {:20} Destination Server:    {}",
-        replica.info.is_provisioned,
-        replica.settings.dst_host
-    );
-    output!(
-        ctx,
-        "Pending Records:     {:<20} Entries:               {:?}",
-        replica.info.pending_records,
-        replica.settings.entries
-    );
-    output!(
-        ctx,
-        "Ok Records (hourly): {:<20} Include:               {:?}",
-        replica.diagnostics.hourly.ok,
-        replica.settings.include
-    );
-    output!(
-        ctx,
-        "Errors (hourly):     {:<20} Exclude:               {:?}",
-        replica.diagnostics.hourly.errored,
-        replica.settings.exclude
-    );
-    output!(
-        ctx,
-        "                                          When:     {}",
-        serde_json::to_string(&replica.settings.when.unwrap_or(json!({})))?
-    );
-    output!(
-        ctx,
-        "                                          Each Nth: {:<5?},        Each Sec: {:<5?}\n",
-        replica.settings.each_n,
-        replica.settings.each_s
-    );
+    let mut info_cells = vec![
+        labeled_cell("Name", replica.info.name.clone()),
+        labeled_cell("Active", replica.info.is_active),
+        labeled_cell("Mode", print_replication_mode(replica.info.mode)),
+        labeled_cell("Provisioned", replica.info.is_provisioned),
+        labeled_cell("Ok Records (hourly)", replica.diagnostics.hourly.ok),
+        labeled_cell("Errors (hourly)", replica.diagnostics.hourly.errored),
+        labeled_cell("Source Bucket", replica.settings.src_bucket.clone()),
+        labeled_cell("Destination Bucket", replica.settings.dst_bucket.clone()),
+        labeled_cell("Destination Server", replica.settings.dst_host.clone()),
+        labeled_cell("Entries", format!("{:?}", replica.settings.entries)),
+    ];
+
+    let when_value = replica
+        .settings
+        .when
+        .as_ref()
+        .map(|value| serde_json::to_string_pretty(value))
+        .transpose()?;
+    let when_cell_value = when_value
+        .map(|value| value.replace('\n', "\n        "))
+        .unwrap_or_else(|| "None".to_string());
+    info_cells.push(labeled_cell("When", when_cell_value));
+
+    let info_table = build_info_table(info_cells);
+    output!(ctx, "{}", info_table);
+    output!(ctx, "");
 
     let table = Table::new(
         replica
@@ -139,16 +120,28 @@ mod tests {
         build_client(&context, "local").await.unwrap();
 
         assert_eq!(show_replica_handler(&context, &args).await.unwrap(), ());
-        assert_eq!(context.stdout().history(), vec![
-            "Name:                test_replica         Source Bucket:         test_bucket",
-            "Active:              true                 Destination Bucket:    test_bucket_2",
-            "Provisioned:         false                Destination Server:    http://localhost:8383",
-            "Pending Records:     0                    Entries:               []",
-            "Ok Records (hourly): 0                    Include:               {}",
-            "Errors (hourly):     0                    Exclude:               {}",
-            "                                          When:     {}",
-            "                                          Each Nth: None,        Each Sec: None\n",
-            "| Error Code | Count | Last Message |\n|------------|-------|--------------|"]
+        let expected_info_table = build_info_table(vec![
+            labeled_cell("Name", "test_replica"),
+            labeled_cell("Active", true),
+            labeled_cell("Mode", "Enabled"),
+            labeled_cell("Provisioned", false),
+            labeled_cell("Ok Records (hourly)", 0),
+            labeled_cell("Errors (hourly)", 0),
+            labeled_cell("Source Bucket", "test_bucket"),
+            labeled_cell("Destination Bucket", "test_bucket_2"),
+            labeled_cell("Destination Server", "http://localhost:8383"),
+            labeled_cell("Entries", "[]"),
+            "When: None".to_string(),
+        ]);
+
+        assert_eq!(
+            context.stdout().history(),
+            vec![
+                expected_info_table,
+                String::new(),
+                "| Error Code | Count | Last Message |\n|------------|-------|--------------|"
+                    .to_string()
+            ]
         );
     }
 

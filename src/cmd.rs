@@ -8,6 +8,7 @@ pub(crate) mod cp;
 pub(crate) mod replica;
 pub(crate) mod rm;
 pub(crate) mod server;
+pub(crate) mod table;
 pub(crate) mod token;
 
 const ALIAS_OR_URL_HELP: &str =
