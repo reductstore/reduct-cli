@@ -6,11 +6,16 @@
 mod create;
 mod helpers;
 mod ls;
+mod mode;
 mod rm;
 mod show;
 mod update;
 
 use crate::cmd::replica::ls::{ls_replica, ls_replica_cmd};
+use crate::cmd::replica::mode::{
+    disable_replica_cmd, disable_replica_handler, enable_replica_cmd, enable_replica_handler,
+    pause_replica_cmd, pause_replica_handler,
+};
 use crate::cmd::replica::rm::{rm_replica_cmd, rm_replica_handler};
 use crate::cmd::replica::show::{show_replica_cmd, show_replica_handler};
 use crate::cmd::replica::update::{update_replica_cmd, update_replica_handler};
@@ -25,6 +30,9 @@ pub(crate) fn replication_cmd() -> Command {
         .subcommand(update_replica_cmd())
         .subcommand(ls_replica_cmd())
         .subcommand(show_replica_cmd())
+        .subcommand(enable_replica_cmd())
+        .subcommand(disable_replica_cmd())
+        .subcommand(pause_replica_cmd())
         .subcommand(rm_replica_cmd())
 }
 
@@ -37,6 +45,9 @@ pub(crate) async fn replication_handler(
         Some(("update", args)) => update_replica_handler(_ctx, args).await?,
         Some(("ls", args)) => ls_replica(_ctx, args).await?,
         Some(("show", args)) => show_replica_handler(_ctx, args).await?,
+        Some(("enable", args)) => enable_replica_handler(_ctx, args).await?,
+        Some(("disable", args)) => disable_replica_handler(_ctx, args).await?,
+        Some(("pause", args)) => pause_replica_handler(_ctx, args).await?,
         Some(("rm", args)) => rm_replica_handler(_ctx, args).await?,
         _ => (),
     }
