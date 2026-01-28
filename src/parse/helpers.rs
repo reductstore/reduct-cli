@@ -100,7 +100,12 @@ pub(crate) fn parse_query_params(
     let each_s = args.get_one::<f64>("each-s").map(|s| *s);
     let when = args.get_one::<String>("when").map(|s| s.to_string());
     let strict = args.get_one::<bool>("strict").unwrap_or(&false);
-    let quiet = args.get_flag("quiet");
+    let quiet = match args.try_get_one::<bool>("quiet") {
+        Ok(Some(value)) => *value,
+        Ok(None) => false,
+        Err(MatchesError::UnknownArgument { .. }) => false,
+        Err(err) => return Err(anyhow::anyhow!("Failed to parse quiet flag: {}", err)),
+    };
     let ext_params = match args.try_get_one::<String>("ext-params") {
         Ok(s) => s.cloned(),
         Err(MatchesError::UnknownArgument { .. }) => None, // ext-params is optional for some commands
