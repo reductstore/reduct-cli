@@ -1,13 +1,13 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::replica::helpers::print_replication_mode;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::io::std::output;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, Command};
-
 use reduct_rs::ReplicationInfo;
 use tabled::{settings::Style, Table, Tabled};
 
@@ -35,6 +35,8 @@ struct ReplicationTable {
     name: String,
     #[tabled(rename = "State")]
     state: String,
+    #[tabled(rename = "Mode")]
+    mode: String,
     #[tabled(rename = "Pending Records")]
     pending_records: u64,
     #[tabled(rename = "Provisioned")]
@@ -50,6 +52,7 @@ impl From<ReplicationInfo> for ReplicationTable {
             } else {
                 "Inactive".to_string()
             },
+            mode: print_replication_mode(replication.mode),
             pending_records: replication.pending_records,
             is_provisioned: replication.is_provisioned,
         }
@@ -145,7 +148,7 @@ mod tests {
         assert_eq!(
             context.stdout().history(),
             vec![
-                "| Name         | State  | Pending Records | Provisioned |\n|--------------|--------|-----------------|-------------|\n| test_replica | Active | 0               | false       |"
+                "| Name         | State  | Mode    | Pending Records | Provisioned |\n|--------------|--------|---------|-----------------|-------------|\n| test_replica | Active | Enabled | 0               | false       |"
             ]
         );
     }

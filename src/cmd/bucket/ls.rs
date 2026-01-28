@@ -4,17 +4,15 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::bucket::helpers::print_bucket_status;
+use crate::cmd::table::{build_info_table, labeled_cell, record_range_cells};
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
-use crate::helpers::timestamp_to_iso;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
 use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::{BucketInfo, BucketInfoList};
-use tabled::settings::Style;
-use tabled::{Table, Tabled};
+use reduct_rs::BucketInfoList;
 
 pub(super) fn ls_bucket_cmd() -> Command {
     Command::new("ls")
@@ -53,39 +51,36 @@ fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
     }
 }
 
-#[derive(Tabled)]
-struct BucketTable {
-    #[tabled(rename = "Name")]
-    name: String,
-    #[tabled(rename = "Entries")]
-    entry_count: u64,
-    #[tabled(rename = "Size")]
-    size: String,
-    #[tabled(rename = "Status")]
-    status: String,
-    #[tabled(rename = "Oldest record (UTC)")]
-    oldest_record: String,
-    #[tabled(rename = "Latest record (UTC)")]
-    latest_record: String,
-}
+fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
+    let mut info_cells = Vec::new();
+    let buckets = bucket_list.buckets;
+    let total = buckets.len();
 
-impl From<BucketInfo> for BucketTable {
-    fn from(bucket: BucketInfo) -> Self {
-        Self {
-            name: bucket.name,
-            entry_count: bucket.entry_count,
-            size: ByteSize(bucket.size).display().si().to_string(),
-            status: print_bucket_status(&bucket.status),
-            oldest_record: timestamp_to_iso(bucket.oldest_record, bucket.entry_count == 0),
-            latest_record: timestamp_to_iso(bucket.latest_record, bucket.entry_count == 0),
+    for (idx, bucket) in buckets.into_iter().enumerate() {
+        info_cells.push(labeled_cell("Name", bucket.name.clone()));
+        info_cells.push(labeled_cell("Entries", bucket.entry_count));
+        info_cells.push(labeled_cell(
+            "Size",
+            ByteSize(bucket.size).display().si().to_string(),
+        ));
+        info_cells.push(labeled_cell("Status", print_bucket_status(&bucket.status)));
+        info_cells.extend(record_range_cells(
+            bucket.oldest_record,
+            bucket.latest_record,
+            bucket.entry_count == 0,
+        ));
+
+        if idx + 1 < total {
+            info_cells.push(String::new());
+            info_cells.push(String::new());
         }
     }
-}
 
-fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
-    let table = Table::new(bucket_list.buckets.into_iter().map(BucketTable::from))
-        .with(Style::markdown())
-        .to_string();
+    if info_cells.is_empty() {
+        return;
+    }
+
+    let table = build_info_table(info_cells);
     output!(ctx, "{}", table);
 }
 
@@ -142,15 +137,23 @@ mod tests {
 
         ls_bucket(&context, &args).await.unwrap();
 
-        assert_eq!(
-            *context.stdout().history().get(0).unwrap(),
-            vec![
-                "| Name          | Entries | Size | Status | Oldest record (UTC)      | Latest record (UTC)      |",
-                "|---------------|---------|------|--------|--------------------------|--------------------------|",
-                "| test_bucket   | 1       | 74 B | Ready  | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |",
-                "| test_bucket_2 | 0       | 0 B  | Ready  | ---                      | ---                      |",
-            ]
-            .join("\n")
-        );
+        let mut expected_cells = vec![
+            labeled_cell("Name", "test_bucket"),
+            labeled_cell("Entries", 1),
+            labeled_cell("Size", "74 B"),
+            labeled_cell("Status", "Ready"),
+        ];
+        expected_cells.extend(record_range_cells(0, 1000, false));
+        expected_cells.push(String::new());
+        expected_cells.push(String::new());
+        expected_cells.push(labeled_cell("Name", "test_bucket_2"));
+        expected_cells.push(labeled_cell("Entries", 0));
+        expected_cells.push(labeled_cell("Size", "0 B"));
+        expected_cells.push(labeled_cell("Status", "Ready"));
+        expected_cells.extend(record_range_cells(0, 0, true));
+
+        let expected_table = build_info_table(expected_cells);
+
+        assert_eq!(context.stdout().history(), vec![expected_table]);
     }
 }
