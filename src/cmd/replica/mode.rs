@@ -75,6 +75,7 @@ mod tests {
     use super::*;
     use crate::cmd::replica::tests::prepare_replication;
     use crate::context::tests::{bucket, bucket2, context, replica};
+    use reduct_rs::ErrorCode;
     use rstest::rstest;
 
     #[rstest]
@@ -98,6 +99,14 @@ mod tests {
         let client = prepare_replication(&context, &test_replica, &bucket, &bucket2)
             .await
             .unwrap();
+
+        if let Err(err) = client.set_replication_mode(&test_replica, mode).await {
+            if err.status() == ErrorCode::MethodNotAllowed {
+                eprintln!("Server does not support replication mode endpoint yet.");
+                return;
+            }
+            panic!("{err:?}");
+        }
 
         match subcommand {
             "enable" => {
