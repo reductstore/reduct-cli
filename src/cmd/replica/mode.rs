@@ -9,7 +9,7 @@ use crate::io::reduct::build_client;
 use crate::io::std::output;
 use crate::parse::ResourcePathParser;
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::{ErrorCode, ReplicationMode};
+use reduct_rs::ReplicationMode;
 
 fn replication_mode_cmd(name: &'static str, about: &'static str) -> Command {
     Command::new(name).about(about).arg(
@@ -43,17 +43,7 @@ async fn set_replica_mode(
         .unwrap();
 
     let client = build_client(ctx, alias_or_url).await?;
-    if let Err(err) = client.set_replication_mode(replication_name, mode).await {
-        if err.status() == ErrorCode::MethodNotAllowed {
-            let mut settings = client.get_replication(replication_name).await?.settings;
-            settings.mode = mode;
-            client
-                .update_replication(replication_name, settings)
-                .await?;
-        } else {
-            return Err(err.into());
-        }
-    }
+    client.set_replication_mode(replication_name, mode).await?;
 
     output!(ctx, "Replication '{}' {}", replication_name, action);
     Ok(())
