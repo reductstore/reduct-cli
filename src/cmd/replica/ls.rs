@@ -3,6 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::replica::helpers::format_mode_with_icon;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::io::std::output;
 use clap::ArgAction::SetTrue;
@@ -60,14 +61,6 @@ impl From<ReplicationInfo> for ReplicationTable {
                 "-".to_string()
             },
         }
-    }
-}
-
-pub(crate) fn format_mode_with_icon(mode: reduct_rs::ReplicationMode) -> String {
-    match mode {
-        reduct_rs::ReplicationMode::Enabled => "▶ Enabled".to_string(),
-        reduct_rs::ReplicationMode::Paused => "⏸ Paused".to_string(),
-        reduct_rs::ReplicationMode::Disabled => "⏹ Disabled".to_string(),
     }
 }
 
@@ -159,9 +152,15 @@ mod tests {
         ls_replica(&context, &args).await.unwrap();
         assert_eq!(
             context.stdout().history(),
-            vec![
-                "| Name         | Status | Mode       | Pending Records | Provisioned |\n|--------------|--------|------------|-----------------|-------------|\n| test_replica | ✅ Ok  | ▶ Enabled | 0               | ✓           |"
-            ]
+            vec![Table::new(vec![ReplicationTable {
+                name: "test_replica".to_string(),
+                status: "✅ Ok".to_string(),
+                mode: "▶ Enabled".to_string(),
+                pending_records: 0,
+                provisioned: "-".to_string(),
+            }])
+            .with(Style::markdown())
+            .to_string()]
         );
     }
 }

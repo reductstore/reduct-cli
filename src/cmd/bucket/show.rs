@@ -14,7 +14,7 @@ use crate::parse::ResourcePathParser;
 use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::{BucketInfo, EntryInfo, FullBucketInfo, ReductClient};
+use reduct_rs::{EntryInfo, FullBucketInfo, ReductClient};
 use tabled::{settings::Style, Table, Tabled};
 
 pub(super) fn show_bucket_cmd() -> Command {
@@ -266,8 +266,17 @@ mod tests {
             vec![
                 expected_info_table,
                 String::new(),
-                "| Name | Records | Blocks | Status  | Size | Oldest Record (UTC) | Latest Record (UTC) |\n|------|---------|--------|---------|------|---------------------|---------------------|\n| test | 2       | 1      | ✅ Ready | 77 B | 1970-01-01T00:00:00Z | 1970-01-01T00:00:00Z |"
-                    .to_string(),
+                Table::new(vec![EntryTable {
+                    name: "test".to_string(),
+                    record_count: 2,
+                    block_count: 1,
+                    status: "✅ Ready".to_string(),
+                    size: "77 B".to_string(),
+                    oldest_record: "1970-01-01T00:00:00Z".to_string(),
+                    latest_record: "1970-01-01T00:00:00Z".to_string(),
+                }])
+                .with(Style::markdown())
+                .to_string(),
             ]
         );
     }

@@ -5,10 +5,10 @@
 
 use reduct_rs::ReplicationMode;
 
-pub(crate) fn print_replication_mode(mode: ReplicationMode) -> String {
+pub(crate) fn format_mode_with_icon(mode: ReplicationMode) -> String {
     match mode {
-        ReplicationMode::Enabled => "Enabled".to_string(),
-        ReplicationMode::Paused => "Paused".to_string(),
-        ReplicationMode::Disabled => "Disabled".to_string(),
+        ReplicationMode::Enabled => "▶ Enabled".to_string(),
+        ReplicationMode::Paused => "⏸ Paused".to_string(),
+        ReplicationMode::Disabled => "⏹ Disabled".to_string(),
     }
 }

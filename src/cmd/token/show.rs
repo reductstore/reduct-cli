@@ -66,10 +66,9 @@ mod tests {
         show_token(&context, &args).await.unwrap();
 
         assert_eq!(context.stdout().history()[0], "Token: test_token");
-        assert!(context.stdout().history()[1].starts_with("Created: "));
-        let created = context.stdout().history()[1]
-            .strip_prefix("Created: ")
-            .unwrap();
+        let history = context.stdout().history();
+        assert!(history[1].starts_with("Created: "));
+        let created = history[1].strip_prefix("Created: ").unwrap();
         assert_eq!(created.len(), 10);
         assert_eq!(context.stdout().history()[2], "Provisioned: -");
         assert_eq!(context.stdout().history()[3], "Full Access: -");

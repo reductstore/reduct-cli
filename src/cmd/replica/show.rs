@@ -3,7 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::cmd::replica::ls::format_mode_with_icon;
+use crate::cmd::replica::helpers::format_mode_with_icon;
 use crate::cmd::table::{build_info_table, labeled_cell};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
