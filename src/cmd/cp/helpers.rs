@@ -3,7 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -173,6 +173,18 @@ pub(super) async fn start_loading<V>(
 where
     V: CopyVisitor + Send + Sync + 'static,
 {
+    start_loading_with_entry_start_overrides(src_bucket, query_params, None, dst_bucket_v).await
+}
+
+pub(super) async fn start_loading_with_entry_start_overrides<V>(
+    src_bucket: Bucket,
+    query_params: QueryParams,
+    entry_start_overrides: Option<HashMap<String, u64>>,
+    dst_bucket_v: V,
+) -> anyhow::Result<()>
+where
+    V: CopyVisitor + Send + Sync + 'static,
+{
     let entries = fetch_and_filter_entries(&src_bucket, &query_params.entry_filter).await?;
 
     let mut tasks = JoinSet::new();
@@ -182,167 +194,206 @@ where
 
     let dst_bucket = Arc::new(dst_bucket_v);
     let src_bucket = Arc::new(src_bucket);
+    let entry_start_overrides = entry_start_overrides.map(Arc::new);
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
-        let mut transfer_progress = TransferProgress::new(entry.clone(), &query_params, &progress);
-
         let local_visitor = Arc::clone(&dst_bucket);
-        let mut params = query_params.clone();
+        let params = build_entry_params(&query_params, &entry, entry_start_overrides.as_deref());
+        let transfer_progress = TransferProgress::new(entry.clone(), &params, &progress);
         let bucket = Arc::clone(&src_bucket);
-        let mut timestamp = params.start.unwrap_or(entry.oldest_record);
-        let mut record_count = 0;
-        tasks.spawn(async move {
-            let mut attempts = DOWNLOAD_ATTEMPTS;
-            while attempts > 0 {
-                let query_builder = build_query(&bucket, &entry, &params);
-
-                macro_rules! print_error_progress {
-                    ($err:expr) => {{
-                        transfer_progress.print_error($err.to_string());
-                        Err($err)
-                    }};
-                }
-
-                let _permit = local_sem.acquire().await.unwrap();
-
-                let record_stream = match query_builder.send().await {
-                    Ok(stream) => stream,
-                    Err(err) => {
-                        if let Err(e) = make_attempt(
-                            &mut attempts,
-                            &mut transfer_progress,
-                            &mut params,
-                            record_count,
-                            timestamp,
-                            err,
-                        )
-                        .await
-                        {
-                            return Err(e);
-                        } else {
-                            continue;
-                        }
-                    }
-                };
-
-                tokio::pin!(record_stream);
-
-                let mut number = NUMBER_DOWNLOAD_LIMIT;
-                let mut memory = MEMORY_AMOUNT_LIMIT;
-                let mut batch: Vec<Record> = Vec::new();
-                let mut retry = false;
-
-                while let Some(record) = record_stream.next().await {
-                    let record = match record {
-                        Ok(record) => record,
-                        Err(err) => {
-                            if let Err(e) = make_attempt(
-                                &mut attempts,
-                                &mut transfer_progress,
-                                &mut params,
-                                record_count,
-                                timestamp,
-                                err,
-                            )
-                            .await
-                            {
-                                return print_error_progress!(e);
-                            } else {
-                                retry = true;
-                                break;
-                            }
-                        }
-                    };
-
-                    let content_length = record.content_length() as isize;
-                    if content_length >= MEMORY_AMOUNT_LIMIT {
-                        if let Err(err) = flush_batch(
-                            &entry.name,
-                            &mut batch,
-                            local_visitor.as_ref(),
-                            &mut transfer_progress,
-                            &mut attempts,
-                            &mut timestamp,
-                            &mut record_count,
-                        )
-                        .await
-                        {
-                            return print_error_progress!(err);
-                        }
-                        batch.push(record);
-                        if let Err(err) = flush_batch(
-                            &entry.name,
-                            &mut batch,
-                            local_visitor.as_ref(),
-                            &mut transfer_progress,
-                            &mut attempts,
-                            &mut timestamp,
-                            &mut record_count,
-                        )
-                        .await
-                        {
-                            return print_error_progress!(err);
-                        }
-                        number = NUMBER_DOWNLOAD_LIMIT;
-                        memory = MEMORY_AMOUNT_LIMIT;
-                        continue;
-                    }
-
-                    memory -= content_length;
-                    if memory < 0 || number == 0 {
-                        if let Err(err) = flush_batch(
-                            &entry.name,
-                            &mut batch,
-                            local_visitor.as_ref(),
-                            &mut transfer_progress,
-                            &mut attempts,
-                            &mut timestamp,
-                            &mut record_count,
-                        )
-                        .await
-                        {
-                            return print_error_progress!(err);
-                        }
-                        batch.push(record);
-                        number = NUMBER_DOWNLOAD_LIMIT.saturating_sub(1);
-                        memory = MEMORY_AMOUNT_LIMIT - content_length;
-                    } else if number == NUMBER_DOWNLOAD_LIMIT {
-                        batch.push(record);
-                        number -= 1;
-                    } else {
-                        batch.push(record);
-                        number -= 1;
-                    }
-                }
-
-                if !retry {
-                    if let Err(err) = flush_batch(
-                        &entry.name,
-                        &mut batch,
-                        local_visitor.as_ref(),
-                        &mut transfer_progress,
-                        &mut attempts,
-                        &mut timestamp,
-                        &mut record_count,
-                    )
-                    .await
-                    {
-                        return print_error_progress!(err);
-                    }
-                    if attempts == DOWNLOAD_ATTEMPTS {
-                        transfer_progress.done();
-                        break;
-                    }
-                }
-            }
-
-            return Ok(());
-        });
+        tasks.spawn(run_entry_copy(
+            entry,
+            bucket,
+            local_visitor,
+            local_sem,
+            params,
+            transfer_progress,
+        ));
     }
 
     while let Some(result) = tasks.join_next().await {
         let _ = result?;
+    }
+
+    Ok(())
+}
+
+fn build_entry_params(
+    query_params: &QueryParams,
+    entry: &EntryInfo,
+    entry_start_overrides: Option<&HashMap<String, u64>>,
+) -> QueryParams {
+    let mut params = query_params.clone();
+    if params.start.is_none() {
+        if let Some(start) = entry_start_override(entry, entry_start_overrides) {
+            params.start = Some(start);
+        }
+    }
+    params
+}
+
+fn entry_start_override(
+    entry: &EntryInfo,
+    entry_start_overrides: Option<&HashMap<String, u64>>,
+) -> Option<u64> {
+    entry_start_overrides.and_then(|overrides| overrides.get(&entry.name).copied())
+}
+
+async fn run_entry_copy<V: CopyVisitor + ?Sized>(
+    entry: EntryInfo,
+    bucket: Arc<Bucket>,
+    visitor: Arc<V>,
+    semaphore: Arc<tokio::sync::Semaphore>,
+    mut params: QueryParams,
+    mut transfer_progress: TransferProgress,
+) -> Result<(), ReductError> {
+    // Copy one entry with retry logic and bounded batching to control memory usage.
+    let mut timestamp = params.start.unwrap_or(entry.oldest_record);
+    let mut record_count = 0;
+    let mut attempts = DOWNLOAD_ATTEMPTS;
+
+    while attempts > 0 {
+        let query_builder = build_query(&bucket, &entry, &params);
+
+        macro_rules! print_error_progress {
+            ($err:expr) => {{
+                transfer_progress.print_error($err.to_string());
+                Err($err)
+            }};
+        }
+
+        let _permit = semaphore.acquire().await.unwrap();
+
+        let record_stream = match query_builder.send().await {
+            Ok(stream) => stream,
+            Err(err) => {
+                if let Err(e) = make_attempt(
+                    &mut attempts,
+                    &mut transfer_progress,
+                    &mut params,
+                    record_count,
+                    timestamp,
+                    err,
+                )
+                .await
+                {
+                    return Err(e);
+                } else {
+                    continue;
+                }
+            }
+        };
+
+        tokio::pin!(record_stream);
+
+        let mut number = NUMBER_DOWNLOAD_LIMIT;
+        let mut memory = MEMORY_AMOUNT_LIMIT;
+        let mut batch: Vec<Record> = Vec::new();
+        let mut retry = false;
+
+        while let Some(record) = record_stream.next().await {
+            let record = match record {
+                Ok(record) => record,
+                Err(err) => {
+                    if let Err(e) = make_attempt(
+                        &mut attempts,
+                        &mut transfer_progress,
+                        &mut params,
+                        record_count,
+                        timestamp,
+                        err,
+                    )
+                    .await
+                    {
+                        return print_error_progress!(e);
+                    } else {
+                        retry = true;
+                        break;
+                    }
+                }
+            };
+
+            let content_length = record.content_length() as isize;
+            if content_length >= MEMORY_AMOUNT_LIMIT {
+                if let Err(err) = flush_batch(
+                    &entry.name,
+                    &mut batch,
+                    visitor.as_ref(),
+                    &mut transfer_progress,
+                    &mut attempts,
+                    &mut timestamp,
+                    &mut record_count,
+                )
+                .await
+                {
+                    return print_error_progress!(err);
+                }
+                batch.push(record);
+                if let Err(err) = flush_batch(
+                    &entry.name,
+                    &mut batch,
+                    visitor.as_ref(),
+                    &mut transfer_progress,
+                    &mut attempts,
+                    &mut timestamp,
+                    &mut record_count,
+                )
+                .await
+                {
+                    return print_error_progress!(err);
+                }
+                number = NUMBER_DOWNLOAD_LIMIT;
+                memory = MEMORY_AMOUNT_LIMIT;
+                continue;
+            }
+
+            memory -= content_length;
+            if memory < 0 || number == 0 {
+                if let Err(err) = flush_batch(
+                    &entry.name,
+                    &mut batch,
+                    visitor.as_ref(),
+                    &mut transfer_progress,
+                    &mut attempts,
+                    &mut timestamp,
+                    &mut record_count,
+                )
+                .await
+                {
+                    return print_error_progress!(err);
+                }
+                batch.push(record);
+                number = NUMBER_DOWNLOAD_LIMIT.saturating_sub(1);
+                memory = MEMORY_AMOUNT_LIMIT - content_length;
+            } else if number == NUMBER_DOWNLOAD_LIMIT {
+                batch.push(record);
+                number -= 1;
+            } else {
+                batch.push(record);
+                number -= 1;
+            }
+        }
+
+        if !retry {
+            if let Err(err) = flush_batch(
+                &entry.name,
+                &mut batch,
+                visitor.as_ref(),
+                &mut transfer_progress,
+                &mut attempts,
+                &mut timestamp,
+                &mut record_count,
+            )
+            .await
+            {
+                return print_error_progress!(err);
+            }
+            if attempts == DOWNLOAD_ATTEMPTS {
+                transfer_progress.done();
+                break;
+            }
+        }
     }
 
     Ok(())
@@ -447,7 +498,8 @@ fn init_task_progress_bar(
             entry.latest_record
         };
 
-        let local_progress = ProgressBar::new(stop - start);
+        let total = (stop.saturating_sub(start)).max(1);
+        let local_progress = ProgressBar::new(total);
         let local_progress = progress.add(local_progress);
         local_progress.set_style(sty.clone());
 

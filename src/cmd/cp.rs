@@ -42,6 +42,13 @@ pub(crate) fn cp_cmd() -> Command {
                 .required(false)
         )
         .arg(
+            Arg::new("from-last")
+                .long("from-last")
+                .help("Copy records starting after the latest record in each destination entry.")
+                .required(false)
+                .action(SetTrue)
+        )
+        .arg(
             Arg::new("stop")
                 .long("stop")
                 .short('e')

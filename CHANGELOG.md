@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add batching in reduct-cli for cp command, [PR-148](https://github.com/reductstore/reduct-cli/pull/148)
 - Show bucket status and update copy/removal handling, [PR-167](https://github.com/reductstore/reduct-cli/pull/167)
 - Add replica mode commands and mode-aware outputs, [PR-168](https://github.com/reductstore/reduct-cli/pull/168)
+- Add --from-last option for incremental cp, [PR-169](https://github.com/reductstore/reduct-cli/pull/169)
 
 ## 0.9.4 - 2025-12-17
 
