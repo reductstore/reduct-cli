@@ -20,6 +20,7 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg, Command, Error};
 use std::ffi::OsStr;
+use url::Url;
 
 const CP_SOURCE_HELP: &str =
     "Source bucket or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS/*, or ./folder)";
@@ -49,6 +50,34 @@ impl TypedValueParser for CpPathParser {
         let is_folder = [".", "/", ".."].iter().any(|s| value.starts_with(s));
         if is_folder {
             return Ok(CpPath::Folder(value));
+        }
+
+        if let Ok(url) = Url::parse(&value) {
+            let scheme = url.scheme();
+            if scheme == "http" || scheme == "https" {
+                let path = url.path().trim_start_matches('/');
+                let bucket = path.trim_end_matches('/');
+                if bucket.is_empty() {
+                    return Ok(CpPath::Instance(value));
+                }
+                if bucket.contains('/') {
+                    let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                    err.insert(
+                        ContextKind::InvalidArg,
+                        ContextValue::String(arg.unwrap().to_string()),
+                    );
+                    err.insert(ContextKind::InvalidValue, ContextValue::String(value));
+                    return Err(err);
+                }
+                let mut base_url = url.clone();
+                base_url.set_path("/");
+                base_url.set_query(None);
+                base_url.set_fragment(None);
+                return Ok(CpPath::Bucket {
+                    instance: base_url.to_string(),
+                    bucket: bucket.to_string(),
+                });
+            }
         }
 
         if let Some((alias_or_url, resource_name)) = value.rsplit_once('/') {
@@ -188,7 +217,7 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
         ) => {
             if src_bucket != "*" {
                 return Err(anyhow::anyhow!(
-                    "Destination bucket is required unless the source uses '*' to copy all buckets."
+                    "Destination bucket is required (e.g. ALIAS/BUCKET or http://host/BUCKET) unless the source uses '*' to copy all buckets."
                 ));
             }
 
@@ -303,6 +332,21 @@ mod tests {
         let args = cp_cmd()
             .try_get_matches_from(vec!["cp", "local", "local/bucket"])
             .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn url_without_bucket_parses_as_instance(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/bucket", "https://example.com"])
+            .unwrap();
+        let dst = args
+            .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+            .unwrap();
+        assert!(matches!(dst, CpPath::Instance(value) if value == "https://example.com"));
+
         let result = cp_handler(&context, &args).await;
         assert!(result.is_err());
     }
