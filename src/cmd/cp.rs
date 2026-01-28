@@ -57,36 +57,48 @@ impl TypedValueParser for CpPathParser {
         
         if is_url {
             // Parse as URL to extract path properly
-            if let Ok(parsed_url) = Url::parse(&value) {
-                let path = parsed_url.path();
-                // Remove leading slash and check if there's a bucket name
-                let path_without_leading_slash = path.trim_start_matches('/');
-                
-                if path_without_leading_slash.is_empty() {
-                    // URL without a path - return as Instance
-                    // Reconstruct URL without path for the instance
-                    let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap_or(""));
-                    let base_url = if let Some(port) = parsed_url.port() {
-                        format!("{}:{}", base_url, port)
-                    } else {
-                        base_url
+            match Url::parse(&value) {
+                Ok(parsed_url) => {
+                    let path = parsed_url.path();
+                    // Remove leading slash and check if there's a bucket name
+                    let path_without_leading_slash = path.trim_start_matches('/');
+                    
+                    // Helper to reconstruct base URL without path
+                    let reconstruct_base_url = || {
+                        let base = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap_or(""));
+                        if let Some(port) = parsed_url.port() {
+                            format!("{}:{}", base, port)
+                        } else {
+                            base
+                        }
                     };
-                    return Ok(CpPath::Instance(base_url));
-                } else {
-                    // URL with a path - extract bucket from path
-                    // Get the first path segment as the bucket name
-                    let bucket = path_without_leading_slash.split('/').next().unwrap().to_string();
-                    // Reconstruct the base URL
-                    let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap_or(""));
-                    let base_url = if let Some(port) = parsed_url.port() {
-                        format!("{}:{}", base_url, port)
+                    
+                    if path_without_leading_slash.is_empty() {
+                        // URL without a path - return as Instance
+                        return Ok(CpPath::Instance(reconstruct_base_url()));
                     } else {
-                        base_url
-                    };
-                    return Ok(CpPath::Bucket {
-                        instance: base_url,
-                        bucket,
-                    });
+                        // URL with a path - extract bucket from first path segment
+                        let bucket = path_without_leading_slash.split('/').next().unwrap().to_string();
+                        return Ok(CpPath::Bucket {
+                            instance: reconstruct_base_url(),
+                            bucket,
+                        });
+                    }
+                }
+                Err(_) => {
+                    // If URL parsing fails for something that looks like a URL, return a clear error
+                    let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                    if let Some(arg) = arg {
+                        err.insert(
+                            ContextKind::InvalidArg,
+                            ContextValue::String(arg.to_string()),
+                        );
+                    }
+                    err.insert(
+                        ContextKind::InvalidValue, 
+                        ContextValue::String(format!("Invalid URL format: {}", value))
+                    );
+                    return Err(err);
                 }
             }
         }
@@ -423,5 +435,30 @@ mod tests {
             }
             _ => panic!("Expected Bucket variant"),
         }
+    }
+
+    #[test]
+    fn test_parse_url_with_multiple_path_segments() {
+        let parser = CpPathParser;
+        let cmd = cp_cmd();
+        // Only the first path segment should be used as the bucket name
+        let result = parser.parse_ref(&cmd, None, OsStr::new("https://example.com/bucket/extra/path"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CpPath::Bucket { instance, bucket } => {
+                assert_eq!(instance, "https://example.com");
+                assert_eq!(bucket, "bucket"); // Only first segment
+            }
+            _ => panic!("Expected Bucket variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_url() {
+        let parser = CpPathParser;
+        let cmd = cp_cmd();
+        // Invalid URL with spaces should return an error
+        let result = parser.parse_ref(&cmd, None, OsStr::new("https://invalid url with spaces"));
+        assert!(result.is_err());
     }
 }
