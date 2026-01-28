@@ -7,16 +7,71 @@ mod b2b;
 mod b2f;
 mod helpers;
 
-use crate::cmd::cp::b2b::cp_bucket_to_bucket;
+use crate::cmd::cp::b2b::{cp_bucket_to_bucket, cp_bucket_to_bucket_with};
 use crate::cmd::cp::b2f::cp_bucket_to_folder;
-use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
+use crate::io::reduct::build_client;
+use crate::io::std::output;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_ext_arg, make_strict_arg, make_when_arg,
 };
-use crate::parse::ResourcePathParser;
+use clap::builder::TypedValueParser;
+use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::ArgAction::SetTrue;
-use clap::{value_parser, Arg, Command};
+use clap::{value_parser, Arg, Command, Error};
+use std::ffi::OsStr;
+
+const CP_SOURCE_HELP: &str =
+    "Source bucket or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS/*, or ./folder)";
+const CP_DEST_HELP: &str =
+    "Destination bucket, instance, or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS, or ./folder)";
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CpPath {
+    Folder(String),
+    Bucket { instance: String, bucket: String },
+    Instance(String),
+}
+
+#[derive(Clone)]
+struct CpPathParser;
+
+impl TypedValueParser for CpPathParser {
+    type Value = CpPath;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        arg: Option<&Arg>,
+        value: &OsStr,
+    ) -> Result<Self::Value, Error> {
+        let value = value.to_string_lossy().to_string();
+        let is_folder = [".", "/", ".."].iter().any(|s| value.starts_with(s));
+        if is_folder {
+            return Ok(CpPath::Folder(value));
+        }
+
+        if let Some((alias_or_url, resource_name)) = value.rsplit_once('/') {
+            if resource_name.is_empty() {
+                return Ok(CpPath::Instance(alias_or_url.to_string()));
+            }
+            Ok(CpPath::Bucket {
+                instance: alias_or_url.to_string(),
+                bucket: resource_name.to_string(),
+            })
+        } else if value.is_empty() {
+            let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+            err.insert(
+                ContextKind::InvalidArg,
+                ContextValue::String(arg.unwrap().to_string()),
+            );
+            err.insert(ContextKind::InvalidValue, ContextValue::String(value));
+            Err(err)
+        } else {
+            Ok(CpPath::Instance(value))
+        }
+    }
+}
 
 pub(crate) fn cp_cmd() -> Command {
     Command::new("cp")
@@ -24,14 +79,14 @@ pub(crate) fn cp_cmd() -> Command {
         .arg_required_else_help(true)
         .arg(
             Arg::new("SOURCE_BUCKET_OR_FOLDER")
-                .help(ALIAS_OR_URL_HELP)
-                .value_parser(ResourcePathParser::new())
+                .help(CP_SOURCE_HELP)
+                .value_parser(CpPathParser)
                 .required(true),
         )
         .arg(
             Arg::new("DESTINATION_BUCKET_OR_FOLDER")
-                .help(ALIAS_OR_URL_HELP)
-                .value_parser(ResourcePathParser::new())
+                .help(CP_DEST_HELP)
+                .value_parser(CpPathParser)
                 .required(true),
         )
         .arg(
@@ -91,25 +146,97 @@ pub(crate) fn cp_cmd() -> Command {
 }
 
 pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    let (_, src_res) = args
-        .get_one::<(String, String)>("SOURCE_BUCKET_OR_FOLDER")
-        .unwrap();
-    let (_, dst_res) = args
-        .get_one::<(String, String)>("DESTINATION_BUCKET_OR_FOLDER")
-        .unwrap();
+    let src = args
+        .get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER")
+        .unwrap()
+        .clone();
+    let dst = args
+        .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+        .unwrap()
+        .clone();
 
-    if src_res.is_empty() && dst_res.is_empty() {
-        return Err(anyhow::anyhow!("Folder to folder copy is not supported."));
-    } else if src_res.is_empty() {
-        // Copy from filesystem to remote bucket
-        return Err(anyhow::anyhow!("Folder to bucket copy is not supported."));
-    } else if dst_res.is_empty() {
-        // Copy from remote bucket to filesystem
-        cp_bucket_to_folder(ctx, args).await?;
-    } else {
-        // Copy from remote bucket to remote bucket
-        cp_bucket_to_bucket(ctx, args).await?;
+    match (src, dst) {
+        (CpPath::Folder(_), CpPath::Folder(_)) => {
+            Err(anyhow::anyhow!("Folder to folder copy is not supported."))
+        }
+        (CpPath::Folder(_), CpPath::Bucket { .. } | CpPath::Instance(_)) => {
+            Err(anyhow::anyhow!("Folder to bucket copy is not supported."))
+        }
+        (CpPath::Bucket { bucket, .. }, CpPath::Folder(_)) => {
+            if bucket == "*" {
+                return Err(anyhow::anyhow!(
+                    "Wildcard bucket copy requires the destination to be an instance only."
+                ));
+            }
+            cp_bucket_to_folder(ctx, args).await?;
+            Ok(())
+        }
+        (
+            CpPath::Bucket {
+                instance: src_instance,
+                bucket: src_bucket,
+            },
+            CpPath::Instance(dst_instance),
+        ) => {
+            if src_bucket != "*" {
+                return Err(anyhow::anyhow!(
+                    "Destination bucket is required unless the source uses '*' to copy all buckets."
+                ));
+            }
+
+            cp_all_buckets(ctx, args, &src_instance, &dst_instance).await?;
+            Ok(())
+        }
+        (
+            CpPath::Bucket {
+                bucket: src_bucket, ..
+            },
+            CpPath::Bucket {
+                bucket: dst_bucket, ..
+            },
+        ) => {
+            if src_bucket == "*" || dst_bucket == "*" {
+                return Err(anyhow::anyhow!(
+                    "Wildcard bucket copy requires the destination to be an instance only."
+                ));
+            }
+            cp_bucket_to_bucket(ctx, args).await?;
+            Ok(())
+        }
+        (CpPath::Instance(_), _) => Err(anyhow::anyhow!(
+            "Source must include a bucket name or use '*' for all buckets."
+        )),
     }
+}
+
+async fn cp_all_buckets(
+    ctx: &CliContext,
+    args: &clap::ArgMatches,
+    src_instance: &str,
+    dst_instance: &str,
+) -> anyhow::Result<()> {
+    let src_client = build_client(ctx, src_instance).await?;
+    let bucket_list = src_client.bucket_list().await?;
+
+    for bucket in bucket_list.buckets {
+        output!(
+            ctx,
+            "Copying bucket '{}' from '{}' to '{}'",
+            bucket.name,
+            src_instance,
+            dst_instance
+        );
+        cp_bucket_to_bucket_with(
+            ctx,
+            args,
+            src_instance,
+            &bucket.name,
+            dst_instance,
+            &bucket.name,
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -134,6 +261,36 @@ mod tests {
     async fn folder_to_bucket_unsupported(context: CliContext) {
         let args = cp_cmd()
             .try_get_matches_from(vec!["cp", "./", "local/bucket"])
+            .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn bucket_to_instance_without_wildcard_rejected(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/bucket", "local"])
+            .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn wildcard_to_bucket_rejected(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/*", "local/bucket"])
+            .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn instance_source_rejected(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local", "local/bucket"])
             .unwrap();
         let result = cp_handler(&context, &args).await;
         assert!(result.is_err());

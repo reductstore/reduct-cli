@@ -4,6 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
+use crate::cmd::cp::CpPath;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use clap::ArgMatches;
@@ -157,14 +158,36 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
         ));
     }
 
-    let (src_instance, src_bucket) = args
-        .get_one::<(String, String)>("SOURCE_BUCKET_OR_FOLDER")
-        .map(|(src_instance, src_bucket)| (src_instance.clone(), src_bucket.clone()))
-        .unwrap();
-    let (first_folder, rest_path) = args
-        .get_one::<(String, String)>("DESTINATION_BUCKET_OR_FOLDER")
-        .map(|(dst_instance, dst_bucket)| (dst_instance.clone(), dst_bucket.clone()))
-        .unwrap();
+    let (src_instance, src_bucket) =
+        match args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
+            CpPath::Bucket { instance, bucket } => (instance.clone(), bucket.clone()),
+            CpPath::Folder(_) => {
+                return Err(anyhow::anyhow!(
+                    "Expected a bucket source, but got a folder path"
+                ))
+            }
+            CpPath::Instance(_) => {
+                return Err(anyhow::anyhow!(
+                    "Expected a bucket source, but got an instance only"
+                ))
+            }
+        };
+    let dst_folder = match args
+        .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+        .unwrap()
+    {
+        CpPath::Folder(path) => PathBuf::from(path),
+        CpPath::Bucket { .. } => {
+            return Err(anyhow::anyhow!(
+                "Expected a folder destination, but got a bucket path"
+            ))
+        }
+        CpPath::Instance(_) => {
+            return Err(anyhow::anyhow!(
+                "Expected a folder destination, but got an instance only"
+            ))
+        }
+    };
 
     let query_params = parse_query_params(ctx, &args)?;
     let src_bucket = build_client(ctx, &src_instance)
@@ -172,7 +195,6 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
         .get_bucket(&src_bucket)
         .await?;
 
-    let dst_folder = PathBuf::from(first_folder).join(rest_path);
     let visitor = CopyToFolderVisitor {
         dst_folder,
         ext: args.get_one::<String>("ext").map(|ext| ext.to_string()),
