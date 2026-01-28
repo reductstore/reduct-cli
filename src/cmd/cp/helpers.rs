@@ -180,7 +180,7 @@ impl BucketProgress {
             };
             let (records, bytes) = self.entry_stats.get(entry).copied().unwrap_or((0, 0));
             lines.push(format!(
-                "  {}{} (🧾 {}, 📦 {})",
+                "  {}{} (🧷 {}, 📦 {})",
                 prefix,
                 entry,
                 records,

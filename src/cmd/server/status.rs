@@ -28,7 +28,7 @@ pub(super) async fn get_server_status(
     let client = build_client(ctx, alias).await?;
     let info = client.server_info().await?;
 
-    output!(ctx, "Status: \tOk");
+    output!(ctx, "Status: \tOk ✅");
     output!(ctx, "Version:\t{}", info.version);
     output!(
         ctx,

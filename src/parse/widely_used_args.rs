@@ -31,7 +31,7 @@ pub(crate) fn make_entries_arg() -> Arg {
         .long("entries")
         .short('n')
         .value_name("ENTRY_NAME")
-        .help("List of entries to export.\nIf not specified, all entries will be requested. Wildcards are supported.")
+        .help("List of entries to export.\nIf not specified, all entries will be requested. Prefix wildcards are supported (e.g. entry-*).")
         .num_args(0..)
         .required(false)
 }
@@ -41,7 +41,9 @@ pub(crate) fn make_when_arg() -> Arg {
         .long("when")
         .short('w')
         .value_name("CONDITION")
-        .help("Filter records by a condition.\nIf not specified, all records will be requested.")
+        .help(
+            "Filter records by a JSON condition.\nIf not specified, all records will be requested.",
+        )
         .required(false)
 }
 
