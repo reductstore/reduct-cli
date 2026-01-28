@@ -20,6 +20,7 @@ use clap::error::{ContextKind, ContextValue, ErrorKind};
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg, Command, Error};
 use std::ffi::OsStr;
+use url::Url;
 
 const CP_SOURCE_HELP: &str =
     "Source bucket or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS/*, or ./folder)";
@@ -49,6 +50,45 @@ impl TypedValueParser for CpPathParser {
         let is_folder = [".", "/", ".."].iter().any(|s| value.starts_with(s));
         if is_folder {
             return Ok(CpPath::Folder(value));
+        }
+
+        // Check if it's a URL (http:// or https://)
+        let is_url = value.starts_with("http://") || value.starts_with("https://");
+        
+        if is_url {
+            // Parse as URL to extract path properly
+            if let Ok(parsed_url) = Url::parse(&value) {
+                let path = parsed_url.path();
+                // Remove leading slash and check if there's a bucket name
+                let path_without_leading_slash = path.trim_start_matches('/');
+                
+                if path_without_leading_slash.is_empty() {
+                    // URL without a path - return as Instance
+                    // Reconstruct URL without path for the instance
+                    let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap_or(""));
+                    let base_url = if let Some(port) = parsed_url.port() {
+                        format!("{}:{}", base_url, port)
+                    } else {
+                        base_url
+                    };
+                    return Ok(CpPath::Instance(base_url));
+                } else {
+                    // URL with a path - extract bucket from path
+                    // Get the first path segment as the bucket name
+                    let bucket = path_without_leading_slash.split('/').next().unwrap().to_string();
+                    // Reconstruct the base URL
+                    let base_url = format!("{}://{}", parsed_url.scheme(), parsed_url.host_str().unwrap_or(""));
+                    let base_url = if let Some(port) = parsed_url.port() {
+                        format!("{}:{}", base_url, port)
+                    } else {
+                        base_url
+                    };
+                    return Ok(CpPath::Bucket {
+                        instance: base_url,
+                        bucket,
+                    });
+                }
+            }
         }
 
         if let Some((alias_or_url, resource_name)) = value.rsplit_once('/') {
@@ -187,9 +227,18 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
             CpPath::Instance(dst_instance),
         ) => {
             if src_bucket != "*" {
-                return Err(anyhow::anyhow!(
-                    "Destination bucket is required unless the source uses '*' to copy all buckets."
-                ));
+                // Check if the destination is a URL to provide a more helpful error message
+                let is_dst_url = dst_instance.starts_with("http://") || dst_instance.starts_with("https://");
+                if is_dst_url {
+                    return Err(anyhow::anyhow!(
+                        "URL destination must include a path to the bucket (e.g., {}/BUCKET_NAME). Use '*' for the source bucket to copy all buckets to the destination instance.",
+                        dst_instance.trim_end_matches('/')
+                    ));
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Destination bucket is required unless the source uses '*' to copy all buckets."
+                    ));
+                }
             }
 
             cp_all_buckets(ctx, args, &src_instance, &dst_instance).await?;
@@ -305,5 +354,74 @@ mod tests {
             .unwrap();
         let result = cp_handler(&context, &args).await;
         assert!(result.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn url_without_bucket_provides_clear_error(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/bucket", "https://test.example.com"])
+            .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("URL destination must include a path to the bucket"));
+        assert!(error_msg.contains("https://test.example.com/BUCKET_NAME"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn url_with_trailing_slash_provides_clear_error(context: CliContext) {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/bucket", "https://test.example.com/"])
+            .unwrap();
+        let result = cp_handler(&context, &args).await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("URL destination must include a path to the bucket"));
+    }
+
+    #[test]
+    fn test_parse_url_with_bucket() {
+        let parser = CpPathParser;
+        let cmd = cp_cmd();
+        let result = parser.parse_ref(&cmd, None, OsStr::new("https://test.example.com/my-bucket"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CpPath::Bucket { instance, bucket } => {
+                assert_eq!(instance, "https://test.example.com");
+                assert_eq!(bucket, "my-bucket");
+            }
+            _ => panic!("Expected Bucket variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_url_without_bucket() {
+        let parser = CpPathParser;
+        let cmd = cp_cmd();
+        let result = parser.parse_ref(&cmd, None, OsStr::new("https://test.example.com"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CpPath::Instance(instance) => {
+                assert_eq!(instance, "https://test.example.com");
+            }
+            _ => panic!("Expected Instance variant"),
+        }
+    }
+
+    #[test]
+    fn test_parse_url_with_port_and_bucket() {
+        let parser = CpPathParser;
+        let cmd = cp_cmd();
+        let result = parser.parse_ref(&cmd, None, OsStr::new("http://localhost:8383/bucket"));
+        assert!(result.is_ok());
+        match result.unwrap() {
+            CpPath::Bucket { instance, bucket } => {
+                assert_eq!(instance, "http://localhost:8383");
+                assert_eq!(bucket, "bucket");
+            }
+            _ => panic!("Expected Bucket variant"),
+        }
     }
 }
