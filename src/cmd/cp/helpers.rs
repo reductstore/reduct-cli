@@ -1,10 +1,10 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::parse::{fetch_and_filter_entries, QueryParams};
@@ -18,45 +18,69 @@ use tokio::time::{sleep, Instant};
 const DOWNLOAD_ATTEMPTS: u8 = 10;
 const NUMBER_DOWNLOAD_LIMIT: i8 = 80;
 const MEMORY_AMOUNT_LIMIT: isize = 8192; //8000?  1000 kB kilobyte, 1024 KiB kibibyte
-
-pub(super) struct TransferProgress {
-    entry: EntryInfo,
+pub(super) struct BucketProgress {
+    bucket_name: String,
+    displayed_entries: Vec<String>,
+    display_limit: usize,
+    total_entries: usize,
+    entry_stats: HashMap<String, (u64, u64)>,
     transferred_bytes: u64,
     record_count: u64,
     speed: u64,
     history: Vec<(u64, Instant)>,
     speed_update: Instant,
     progress_bar: ProgressBar,
-    start: Option<u64>,
+    quiet: bool,
 }
 
-impl TransferProgress {
+impl BucketProgress {
     pub(super) fn new(
-        entry: EntryInfo,
-        query_params: &QueryParams,
+        bucket_name: String,
+        display_limit: usize,
+        total_entries: usize,
         progress: &MultiProgress,
+        quiet: bool,
     ) -> Self {
-        let (start, progress_bar) = init_task_progress_bar(query_params, progress, &entry);
+        let progress_bar = init_bucket_progress_bar(progress, quiet);
 
         let me = Self {
-            entry,
+            bucket_name,
+            displayed_entries: Vec::new(),
+            display_limit: display_limit.max(1),
+            total_entries,
+            entry_stats: HashMap::new(),
             transferred_bytes: 0,
             record_count: 0,
             speed: 0,
             history: Vec::new(),
             speed_update: Instant::now(),
             progress_bar,
-            start,
+            quiet,
         };
 
-        me.progress_bar.set_message(me.message());
+        if !me.quiet {
+            me.progress_bar.set_message(me.message());
+        }
         me
     }
 
-    pub(super) fn update(&mut self, time: u64, content_length: u64) {
+    pub(super) fn update(&mut self, entry_name: &str, content_length: u64) {
         self.transferred_bytes += content_length;
         self.record_count += 1;
         self.history.push((content_length, Instant::now()));
+        let entry_stats = self
+            .entry_stats
+            .entry(entry_name.to_string())
+            .or_insert((0, 0));
+        let was_empty = entry_stats.0 == 0;
+        entry_stats.0 = entry_stats.0.saturating_add(1);
+        entry_stats.1 = entry_stats.1.saturating_add(content_length);
+        if was_empty
+            && self.displayed_entries.len() < self.display_limit
+            && !self.displayed_entries.iter().any(|name| name == entry_name)
+        {
+            self.displayed_entries.push(entry_name.to_string());
+        }
 
         let duration = self.history[0].1.elapsed().as_secs();
         self.speed =
@@ -70,46 +94,106 @@ impl TransferProgress {
                 self.speed
             };
 
-        if let Some(start) = self.start {
-            self.progress_bar.set_position(time - start);
-        } else {
-            //  query with limit
+        if !self.quiet {
+            self.progress_bar
+                .set_length(self.record_count.saturating_add(1));
             self.progress_bar.set_position(self.record_count);
+            self.progress_bar.set_message(self.message());
         }
-
-        self.progress_bar.set_message(self.message());
-    }
-
-    pub(crate) fn print_error(&self, err: String) {
-        self.progress_bar.set_message(format!("{}", err));
-        self.progress_bar.abandon();
     }
 
     pub(crate) fn print_warning(&self, warning: String) {
-        self.progress_bar.set_message(format!("{}", warning));
+        if !self.quiet {
+            self.progress_bar
+                .set_message(format!("Warning: {} | {}", warning, self.message()));
+        }
     }
 
     pub(crate) fn done(&self) {
-        let msg = format!(
-            "Copied {} records from '{}' ({}, {}/s)",
-            self.record_count,
-            self.entry.name,
-            ByteSize::b(self.transferred_bytes),
-            ByteSize::b(self.speed)
-        );
+        if !self.quiet {
+            let msg = format!(
+                "Copied {} records from bucket '{}' ({}, {}/s)\n{}",
+                self.record_count,
+                self.bucket_name,
+                ByteSize::b(self.transferred_bytes),
+                ByteSize::b(self.speed),
+                self.entry_tree()
+            );
+            self.progress_bar.set_message(msg);
+            self.progress_bar.abandon();
+        } else {
+            let msg = format!(
+                "Copied {} records from bucket '{}' ({})",
+                self.record_count,
+                self.bucket_name,
+                ByteSize::b(self.transferred_bytes)
+            );
+            println!("{}", msg);
+        }
+    }
 
-        self.progress_bar.set_message(msg);
-        self.progress_bar.abandon();
+    pub(crate) fn all_failed(&self) {
+        if !self.quiet {
+            let msg = format!(
+                "Failed to copy any entries from bucket '{}'\n{}",
+                self.bucket_name,
+                self.entry_tree()
+            );
+            self.progress_bar.set_message(msg);
+            self.progress_bar.abandon();
+        } else {
+            let msg = format!(
+                "Failed to copy any entries from bucket '{}'",
+                self.bucket_name
+            );
+            eprintln!("{}", msg);
+        }
     }
 
     fn message(&self) -> String {
         format!(
-            "Copying {} records from '{}' ({}, {}/s)",
+            "Copying {} records from bucket '{}' ({}, {}/s)\n{}",
             self.record_count,
-            self.entry.name,
+            self.bucket_name,
             ByteSize::b(self.transferred_bytes),
-            ByteSize::b(self.speed)
+            ByteSize::b(self.speed),
+            self.entry_tree()
         )
+    }
+
+    fn entry_tree(&self) -> String {
+        let mut lines = Vec::with_capacity(self.displayed_entries.len() + 2);
+        lines.push("entries:".to_string());
+        if self.displayed_entries.is_empty() {
+            lines.push("  └─ (no entries copied yet)".to_string());
+            return lines.join("\n");
+        }
+        for (idx, entry) in self.displayed_entries.iter().enumerate() {
+            let prefix = if idx + 1 == self.displayed_entries.len()
+                && self.total_entries <= self.displayed_entries.len()
+            {
+                "└─ "
+            } else if idx + 1 == self.displayed_entries.len() {
+                "└─ "
+            } else {
+                "├─ "
+            };
+            let (records, bytes) = self.entry_stats.get(entry).copied().unwrap_or((0, 0));
+            lines.push(format!(
+                "  {}{} (🧾 {}, 📦 {})",
+                prefix,
+                entry,
+                records,
+                ByteSize::b(bytes)
+            ));
+        }
+        if self.total_entries > self.displayed_entries.len() {
+            lines.push(format!(
+                "  └─ +{} more",
+                self.total_entries - self.displayed_entries.len()
+            ));
+        }
+        lines.join("\n")
     }
 }
 
@@ -186,6 +270,9 @@ where
     V: CopyVisitor + Send + Sync + 'static,
 {
     let entries = fetch_and_filter_entries(&src_bucket, &query_params.entry_filter).await?;
+    if entries.is_empty() {
+        return Ok(());
+    }
 
     let mut tasks = JoinSet::new();
     let progress = MultiProgress::new();
@@ -196,11 +283,22 @@ where
     let src_bucket = Arc::new(src_bucket);
     let entry_start_overrides = entry_start_overrides.map(Arc::new);
 
+    let display_limit = query_params.parallel.max(1);
+    let bucket_name = src_bucket.name().to_string();
+    let quiet = query_params.quiet;
+    let bucket_progress = Arc::new(Mutex::new(BucketProgress::new(
+        bucket_name,
+        display_limit,
+        entries.len(),
+        &progress,
+        quiet,
+    )));
+
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
         let local_visitor = Arc::clone(&dst_bucket);
         let params = build_entry_params(&query_params, &entry, entry_start_overrides.as_deref());
-        let transfer_progress = TransferProgress::new(entry.clone(), &params, &progress);
+        let bucket_progress = Arc::clone(&bucket_progress);
         let bucket = Arc::clone(&src_bucket);
         tasks.spawn(run_entry_copy(
             entry,
@@ -208,14 +306,39 @@ where
             local_visitor,
             local_sem,
             params,
-            transfer_progress,
+            bucket_progress,
         ));
     }
 
+    let mut failed_entries = 0usize;
+    let mut completed_entries = 0usize;
     while let Some(result) = tasks.join_next().await {
-        let _ = result?;
+        match result {
+            Ok(outcome) => {
+                completed_entries += 1;
+                if let Err(err) = outcome.result {
+                    failed_entries += 1;
+                    eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
+                }
+            }
+            Err(err) => {
+                failed_entries += 1;
+                completed_entries += 1;
+                eprintln!("Failed to copy entry: {}", err);
+            }
+        }
     }
 
+    let progress_guard = bucket_progress.lock().unwrap();
+    if failed_entries == completed_entries {
+        progress_guard.all_failed();
+        return Err(anyhow::anyhow!(
+            "Failed to copy any entries from bucket '{}'",
+            progress_guard.bucket_name
+        ));
+    }
+
+    progress_guard.done();
     Ok(())
 }
 
@@ -240,28 +363,27 @@ fn entry_start_override(
     entry_start_overrides.and_then(|overrides| overrides.get(&entry.name).copied())
 }
 
+struct EntryCopyOutcome {
+    entry_name: String,
+    result: Result<(), ReductError>,
+}
+
 async fn run_entry_copy<V: CopyVisitor + ?Sized>(
     entry: EntryInfo,
     bucket: Arc<Bucket>,
     visitor: Arc<V>,
     semaphore: Arc<tokio::sync::Semaphore>,
     mut params: QueryParams,
-    mut transfer_progress: TransferProgress,
-) -> Result<(), ReductError> {
+    bucket_progress: Arc<Mutex<BucketProgress>>,
+) -> EntryCopyOutcome {
     // Copy one entry with retry logic and bounded batching to control memory usage.
     let mut timestamp = params.start.unwrap_or(entry.oldest_record);
     let mut record_count = 0;
     let mut attempts = DOWNLOAD_ATTEMPTS;
+    let entry_name = entry.name.clone();
 
     while attempts > 0 {
         let query_builder = build_query(&bucket, &entry, &params);
-
-        macro_rules! print_error_progress {
-            ($err:expr) => {{
-                transfer_progress.print_error($err.to_string());
-                Err($err)
-            }};
-        }
 
         let _permit = semaphore.acquire().await.unwrap();
 
@@ -270,7 +392,7 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
             Err(err) => {
                 if let Err(e) = make_attempt(
                     &mut attempts,
-                    &mut transfer_progress,
+                    &bucket_progress,
                     &mut params,
                     record_count,
                     timestamp,
@@ -278,7 +400,10 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                 )
                 .await
                 {
-                    return Err(e);
+                    return EntryCopyOutcome {
+                        entry_name,
+                        result: Err(e),
+                    };
                 } else {
                     continue;
                 }
@@ -298,7 +423,7 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                 Err(err) => {
                     if let Err(e) = make_attempt(
                         &mut attempts,
-                        &mut transfer_progress,
+                        &bucket_progress,
                         &mut params,
                         record_count,
                         timestamp,
@@ -306,7 +431,10 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                     )
                     .await
                     {
-                        return print_error_progress!(e);
+                        return EntryCopyOutcome {
+                            entry_name,
+                            result: Err(e),
+                        };
                     } else {
                         retry = true;
                         break;
@@ -320,28 +448,34 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                     &entry.name,
                     &mut batch,
                     visitor.as_ref(),
-                    &mut transfer_progress,
+                    &bucket_progress,
                     &mut attempts,
                     &mut timestamp,
                     &mut record_count,
                 )
                 .await
                 {
-                    return print_error_progress!(err);
+                    return EntryCopyOutcome {
+                        entry_name,
+                        result: Err(err),
+                    };
                 }
                 batch.push(record);
                 if let Err(err) = flush_batch(
                     &entry.name,
                     &mut batch,
                     visitor.as_ref(),
-                    &mut transfer_progress,
+                    &bucket_progress,
                     &mut attempts,
                     &mut timestamp,
                     &mut record_count,
                 )
                 .await
                 {
-                    return print_error_progress!(err);
+                    return EntryCopyOutcome {
+                        entry_name,
+                        result: Err(err),
+                    };
                 }
                 number = NUMBER_DOWNLOAD_LIMIT;
                 memory = MEMORY_AMOUNT_LIMIT;
@@ -354,14 +488,17 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                     &entry.name,
                     &mut batch,
                     visitor.as_ref(),
-                    &mut transfer_progress,
+                    &bucket_progress,
                     &mut attempts,
                     &mut timestamp,
                     &mut record_count,
                 )
                 .await
                 {
-                    return print_error_progress!(err);
+                    return EntryCopyOutcome {
+                        entry_name,
+                        result: Err(err),
+                    };
                 }
                 batch.push(record);
                 number = NUMBER_DOWNLOAD_LIMIT.saturating_sub(1);
@@ -380,30 +517,35 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
                 &entry.name,
                 &mut batch,
                 visitor.as_ref(),
-                &mut transfer_progress,
+                &bucket_progress,
                 &mut attempts,
                 &mut timestamp,
                 &mut record_count,
             )
             .await
             {
-                return print_error_progress!(err);
+                return EntryCopyOutcome {
+                    entry_name,
+                    result: Err(err),
+                };
             }
             if attempts == DOWNLOAD_ATTEMPTS {
-                transfer_progress.done();
                 break;
             }
         }
     }
 
-    Ok(())
+    EntryCopyOutcome {
+        entry_name,
+        result: Ok(()),
+    }
 }
 
 async fn flush_batch<V: CopyVisitor + ?Sized>(
     entry_name: &str,
     batch: &mut Vec<Record>,
     visitor: &V,
-    transfer_progress: &mut TransferProgress,
+    bucket_progress: &Arc<Mutex<BucketProgress>>,
     attempts: &mut u8,
     timestamp: &mut u64,
     record_count: &mut u64,
@@ -425,7 +567,9 @@ async fn flush_batch<V: CopyVisitor + ?Sized>(
     for (ts, len) in batch_info {
         *record_count += 1;
         *timestamp = ts;
-        transfer_progress.update(ts, len);
+        if let Ok(mut progress) = bucket_progress.lock() {
+            progress.update(entry_name, len);
+        }
         sleep(Duration::from_micros(5)).await;
     }
 
@@ -438,7 +582,7 @@ async fn flush_batch<V: CopyVisitor + ?Sized>(
 // we also need to adjust the limit if we have one
 async fn make_attempt(
     attempts: &mut u8,
-    transfer_progress: &mut TransferProgress,
+    bucket_progress: &Arc<Mutex<BucketProgress>>,
     params: &mut QueryParams,
     record_count: u64,
     timestamp: u64,
@@ -447,7 +591,6 @@ async fn make_attempt(
     *attempts -= 1;
 
     if *attempts == 0 {
-        transfer_progress.print_error(err.to_string());
         Err(err)
     } else {
         params.start = Some(timestamp);
@@ -456,54 +599,30 @@ async fn make_attempt(
             params.limit = Some(limit.saturating_sub(record_count));
         }
 
-        transfer_progress.print_warning(format!(
-            "{}. Retrying... (attempts {} / {})",
-            err, *attempts, DOWNLOAD_ATTEMPTS
-        ));
+        if let Ok(progress) = bucket_progress.lock() {
+            progress.print_warning(format!(
+                "{}. Retrying... (attempts {} / {})",
+                err, *attempts, DOWNLOAD_ATTEMPTS
+            ));
+        }
 
         tokio::time::sleep(Duration::from_secs(1)).await;
         Ok(())
     }
 }
 
-fn init_task_progress_bar(
-    query_params: &QueryParams,
-    progress: &MultiProgress,
-    entry: &EntryInfo,
-) -> (Option<u64>, ProgressBar) {
-    let limit = query_params.limit;
-    let sty = ProgressStyle::with_template(
-        "[{elapsed_precise}, ETA {eta_precise}] {bar:40.green/gray} {percent_precise:6}% {msg}",
-    )
-    .unwrap();
-
-    if let Some(limit) = limit {
-        // progress for limited copying
-        let local_progress = ProgressBar::new(limit);
-        local_progress.set_style(sty.clone());
-
-        (None, progress.add(local_progress))
+fn init_bucket_progress_bar(progress: &MultiProgress, quiet: bool) -> ProgressBar {
+    if quiet {
+        ProgressBar::hidden()
     } else {
-        // progress for full copying based on time range
-        // we don't know the total number of records, so we use the time range
-        let start = if let Some(start) = query_params.start {
-            start as u64
-        } else {
-            entry.oldest_record
-        };
-
-        let stop = if let Some(stop) = query_params.stop {
-            stop as u64
-        } else {
-            entry.latest_record
-        };
-
-        let total = (stop.saturating_sub(start)).max(1);
-        let local_progress = ProgressBar::new(total);
+        let sty = ProgressStyle::with_template(
+            "[{elapsed_precise}, ETA {eta_precise}] {bar:40.green/gray} {percent_precise:6}% {msg}",
+        )
+        .unwrap();
+        let local_progress = ProgressBar::new(1);
         let local_progress = progress.add(local_progress);
-        local_progress.set_style(sty.clone());
-
-        (Some(start), local_progress)
+        local_progress.set_style(sty);
+        local_progress
     }
 }
 
@@ -646,6 +765,7 @@ mod tests {
 
             let params = QueryParams {
                 entry_filter: vec!["entry-*".to_string()],
+                quiet: false,
                 ..Default::default()
             };
 
@@ -667,6 +787,7 @@ mod tests {
 
             let params = QueryParams {
                 entry_filter: vec!["entry-1".to_string()],
+                quiet: false,
                 ..Default::default()
             };
 
@@ -697,6 +818,7 @@ mod tests {
 
             let params = QueryParams {
                 limit: Some(1),
+                quiet: false,
                 ..Default::default()
             };
 

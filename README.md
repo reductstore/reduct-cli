@@ -34,6 +34,7 @@ reduct-cli alias add play -L  https://play.reduct.store -t reductstore
 reduct-cli server status play
 reduct-cli bucket ls --full play
 reduct-cli cp play/datasets ./datasets --limit 100
+reduct-cli cp play/* backup
 ```
 
 For more examples, see the [Guides](https://www.reduct.store/docs/guides) section in the ReductStore documentation.

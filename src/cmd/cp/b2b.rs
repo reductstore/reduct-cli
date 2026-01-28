@@ -4,6 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::cp::helpers::{start_loading_with_entry_start_overrides, CopyVisitor};
+use crate::cmd::cp::CpPath;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::parse_query_params;
@@ -59,34 +60,47 @@ impl CopyVisitor for CopyToBucketVisitor {
 }
 
 pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (src_instance, src_bucket) = args
-        .get_one::<(String, String)>("SOURCE_BUCKET_OR_FOLDER")
-        .map(|(src_instance, src_bucket)| (src_instance.clone(), src_bucket.clone()))
-        .unwrap();
-    let (dst_instance, dst_bucket) = args
-        .get_one::<(String, String)>("DESTINATION_BUCKET_OR_FOLDER")
-        .map(|(dst_instance, dst_bucket)| (dst_instance.clone(), dst_bucket.clone()))
-        .unwrap();
+    let (src_instance, src_bucket) = parse_bucket_pair(args, "SOURCE_BUCKET_OR_FOLDER")?;
+    let (dst_instance, dst_bucket) = parse_bucket_pair(args, "DESTINATION_BUCKET_OR_FOLDER")?;
 
+    cp_bucket_to_bucket_with(
+        ctx,
+        args,
+        &src_instance,
+        &src_bucket,
+        &dst_instance,
+        &dst_bucket,
+    )
+    .await
+}
+
+pub(crate) async fn cp_bucket_to_bucket_with(
+    ctx: &CliContext,
+    args: &ArgMatches,
+    src_instance: &str,
+    src_bucket: &str,
+    dst_instance: &str,
+    dst_bucket: &str,
+) -> anyhow::Result<()> {
     let query_params = parse_query_params(ctx, &args)?;
     let from_last = args.get_flag("from-last");
     if from_last && args.get_one::<String>("start").is_some() {
         return Err(anyhow::anyhow!("--from-last can't be used with --start"));
     }
 
-    let src_bucket = build_client(ctx, &src_instance)
+    let src_bucket = build_client(ctx, src_instance)
         .await?
-        .get_bucket(&src_bucket)
+        .get_bucket(src_bucket)
         .await?;
 
-    let dst_client = build_client(ctx, &dst_instance).await?;
-    let dst_bucket = match dst_client.get_bucket(&dst_bucket).await {
+    let dst_client = build_client(ctx, dst_instance).await?;
+    let dst_bucket = match dst_client.get_bucket(dst_bucket).await {
         Ok(bucket) => bucket,
         Err(err) => {
             if err.status() == ErrorCode::NotFound {
                 // Create the bucket if it does not exist with the same settings as the source bucket
                 dst_client
-                    .create_bucket(&dst_bucket)
+                    .create_bucket(dst_bucket)
                     .settings(src_bucket.settings().await?)
                     .send()
                     .await?
@@ -113,6 +127,21 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         dst_bucket_visitor,
     )
     .await
+}
+
+fn parse_bucket_pair(args: &ArgMatches, key: &str) -> anyhow::Result<(String, String)> {
+    let value = args.get_one::<CpPath>(key).unwrap();
+    match value {
+        CpPath::Bucket { instance, bucket } => Ok((instance.clone(), bucket.clone())),
+        CpPath::Folder(_) => Err(anyhow::anyhow!(
+            "Expected a bucket path for '{}', but got a folder path",
+            key
+        )),
+        CpPath::Instance(_) => Err(anyhow::anyhow!(
+            "Expected a bucket path for '{}', but got an instance only",
+            key
+        )),
+    }
 }
 
 async fn build_entry_start_overrides(dst_bucket: &Bucket) -> anyhow::Result<HashMap<String, u64>> {
