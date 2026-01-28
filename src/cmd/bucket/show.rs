@@ -4,7 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::bucket::helpers::print_bucket_status;
-use crate::cmd::table::{build_info_table, labeled_cell, record_range_cells};
+use crate::cmd::table::{build_info_table_with_columns, labeled_cell, record_range_cells};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::helpers::timestamp_to_iso;
@@ -14,7 +14,7 @@ use crate::parse::ResourcePathParser;
 use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::{BucketInfo, EntryInfo, FullBucketInfo, ReductClient};
+use reduct_rs::{EntryInfo, FullBucketInfo, ReductClient};
 use tabled::{settings::Style, Table, Tabled};
 
 pub(super) fn show_bucket_cmd() -> Command {
@@ -44,6 +44,8 @@ struct EntryTable {
     record_count: u64,
     #[tabled(rename = "Blocks")]
     block_count: u64,
+    #[tabled(rename = "Status")]
+    status: String,
 
     #[tabled(rename = "Size")]
     size: String,
@@ -55,10 +57,16 @@ struct EntryTable {
 
 impl From<EntryInfo> for EntryTable {
     fn from(entry: EntryInfo) -> Self {
+        let status = if entry.record_count == 0 {
+            "⚪ Empty".to_string()
+        } else {
+            "✅ Ready".to_string()
+        };
         Self {
             name: entry.name,
             record_count: entry.record_count,
             block_count: entry.block_count,
+            status,
             size: ByteSize(entry.size).display().si().to_string(),
             oldest_record: timestamp_to_iso(entry.oldest_record, entry.record_count == 0),
             latest_record: timestamp_to_iso(entry.latest_record, entry.record_count == 0),
@@ -75,26 +83,41 @@ pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::
     if args.get_flag("full") {
         print_full_bucket(ctx, bucket)?;
     } else {
-        print_bucket(ctx, bucket.info)?;
+        print_bucket(ctx, bucket)?;
     }
 
     Ok(())
 }
 
-fn print_bucket(ctx: &CliContext, bucket: BucketInfo) -> anyhow::Result<()> {
+fn record_range_cells_compact(oldest: u64, latest: u64, is_empty: bool) -> Vec<String> {
+    record_range_cells(oldest, latest, is_empty)
+        .into_iter()
+        .filter(|cell| !cell.is_empty())
+        .collect()
+}
+
+fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
+    let info = bucket.info;
+    let total_blocks = bucket
+        .entries
+        .iter()
+        .map(|entry| entry.block_count)
+        .sum::<u64>();
     let mut info_cells = vec![
-        labeled_cell("Name", bucket.name),
-        labeled_cell("Entries", bucket.entry_count),
-        labeled_cell("Size", ByteSize(bucket.size).display().si().to_string()),
-        labeled_cell("Status", print_bucket_status(&bucket.status)),
+        labeled_cell("Name", info.name),
+        labeled_cell("Entries", info.entry_count),
+        labeled_cell("Blocks", total_blocks),
+        labeled_cell("Size", ByteSize(info.size).display().si().to_string()),
+        labeled_cell("Status", print_bucket_status(&info.status)),
+        labeled_cell("Provisioned", if info.is_provisioned { "✓" } else { "-" }),
     ];
-    info_cells.extend(record_range_cells(
-        bucket.oldest_record,
-        bucket.latest_record,
-        bucket.entry_count == 0,
+    info_cells.extend(record_range_cells_compact(
+        info.oldest_record,
+        info.latest_record,
+        info.entry_count == 0,
     ));
 
-    let info_table = build_info_table(info_cells);
+    let info_table = build_info_table_with_columns(info_cells, 1);
 
     output!(ctx, "{}", info_table);
     output!(ctx, "");
@@ -104,6 +127,11 @@ fn print_bucket(ctx: &CliContext, bucket: BucketInfo) -> anyhow::Result<()> {
 fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
     let settings = bucket.settings;
     let info = bucket.info;
+    let total_blocks = bucket
+        .entries
+        .iter()
+        .map(|entry| entry.block_count)
+        .sum::<u64>();
     let mut info_cells = vec![
         labeled_cell("Name", info.name),
         labeled_cell("Quota Type", settings.quota_type.unwrap()),
@@ -123,16 +151,23 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
                 .si()
                 .to_string(),
         ),
-        labeled_cell("Status", print_bucket_status(&info.status)),
+        labeled_cell("Blocks", total_blocks),
         labeled_cell("Max. Block Records", settings.max_block_records.unwrap()),
+        labeled_cell("Status", print_bucket_status(&info.status)),
+        String::new(),
+        labeled_cell("Provisioned", if info.is_provisioned { "✓" } else { "-" }),
+        String::new(),
     ];
-    info_cells.extend(record_range_cells(
+    for cell in record_range_cells_compact(
         info.oldest_record,
         info.latest_record,
         info.entry_count == 0,
-    ));
+    ) {
+        info_cells.push(cell);
+        info_cells.push(String::new());
+    }
 
-    let info_table = build_info_table(info_cells);
+    let info_table = build_info_table_with_columns(info_cells, 2);
 
     output!(ctx, "{}", info_table);
     output!(ctx, "");
@@ -164,11 +199,13 @@ mod tests {
         let mut expected_cells = vec![
             labeled_cell("Name", "test_bucket"),
             labeled_cell("Entries", 0),
+            labeled_cell("Blocks", 0),
             labeled_cell("Size", "0 B"),
-            labeled_cell("Status", "Ready"),
+            labeled_cell("Status", "✅ Ready"),
+            labeled_cell("Provisioned", "-"),
         ];
-        expected_cells.extend(record_range_cells(0, 0, true));
-        let expected_info_table = build_info_table(expected_cells);
+        expected_cells.extend(record_range_cells_compact(0, 0, true));
+        let expected_info_table = build_info_table_with_columns(expected_cells, 1);
 
         assert_eq!(
             context.stdout().history(),
@@ -211,19 +248,35 @@ mod tests {
             labeled_cell("Quota Size", "0 B"),
             labeled_cell("Size", "77 B"),
             labeled_cell("Max. Block Size", "64.0 MB"),
-            labeled_cell("Status", "Ready"),
+            labeled_cell("Blocks", 1),
             labeled_cell("Max. Block Records", 1024),
+            labeled_cell("Status", "✅ Ready"),
+            String::new(),
+            labeled_cell("Provisioned", "-"),
+            String::new(),
         ];
-        expected_cells.extend(record_range_cells(0, 1000, false));
-        let expected_info_table = build_info_table(expected_cells);
+        for cell in record_range_cells_compact(0, 1000, false) {
+            expected_cells.push(cell);
+            expected_cells.push(String::new());
+        }
+        let expected_info_table = build_info_table_with_columns(expected_cells, 2);
 
         assert_eq!(
             context.stdout().history(),
             vec![
                 expected_info_table,
                 String::new(),
-                "| Name | Records | Blocks | Size | Oldest Record (UTC)      | Latest Record (UTC)      |\n|------|---------|--------|------|--------------------------|--------------------------|\n| test | 2       | 1      | 77 B | 1970-01-01T00:00:00.000Z | 1970-01-01T00:00:00.001Z |"
-                    .to_string(),
+                Table::new(vec![EntryTable {
+                    name: "test".to_string(),
+                    record_count: 2,
+                    block_count: 1,
+                    status: "✅ Ready".to_string(),
+                    size: "77 B".to_string(),
+                    oldest_record: "1970-01-01T00:00:00Z".to_string(),
+                    latest_record: "1970-01-01T00:00:00Z".to_string(),
+                }])
+                .with(Style::markdown())
+                .to_string(),
             ]
         );
     }

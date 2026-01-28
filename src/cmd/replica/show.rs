@@ -3,7 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::cmd::replica::helpers::print_replication_mode;
+use crate::cmd::replica::helpers::format_mode_with_icon;
 use crate::cmd::table::{build_info_table, labeled_cell};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
@@ -33,6 +33,15 @@ struct ErrorRow {
     message: String,
 }
 
+fn build_error_table(mut rows: Vec<ErrorRow>) -> Option<String> {
+    if rows.is_empty() {
+        return None;
+    }
+    rows.sort_by_key(|row| row.code);
+
+    Some(Table::new(rows).with(Style::markdown()).to_string())
+}
+
 pub(super) async fn show_replica_handler(
     ctx: &crate::context::CliContext,
     args: &clap::ArgMatches,
@@ -46,9 +55,23 @@ pub(super) async fn show_replica_handler(
 
     let mut info_cells = vec![
         labeled_cell("Name", replica.info.name.clone()),
-        labeled_cell("Active", replica.info.is_active),
-        labeled_cell("Mode", print_replication_mode(replica.info.mode)),
-        labeled_cell("Provisioned", replica.info.is_provisioned),
+        labeled_cell(
+            "Active",
+            if replica.info.is_active {
+                "✅ Ok"
+            } else {
+                "❌ Error"
+            },
+        ),
+        labeled_cell("Mode", format_mode_with_icon(replica.info.mode)),
+        labeled_cell(
+            "Provisioned",
+            if replica.info.is_provisioned {
+                "✓"
+            } else {
+                "-"
+            },
+        ),
         labeled_cell("Ok Records (hourly)", replica.diagnostics.hourly.ok),
         labeled_cell("Errors (hourly)", replica.diagnostics.hourly.errored),
         labeled_cell("Source Bucket", replica.settings.src_bucket.clone()),
@@ -64,7 +87,7 @@ pub(super) async fn show_replica_handler(
         .map(|value| serde_json::to_string_pretty(value))
         .transpose()?;
     let when_cell_value = when_value
-        .map(|value| value.replace('\n', "\n        "))
+        .map(|value| value.replace('\n', "\n  "))
         .unwrap_or_else(|| "None".to_string());
     info_cells.push(labeled_cell("When", when_cell_value));
 
@@ -72,22 +95,20 @@ pub(super) async fn show_replica_handler(
     output!(ctx, "{}", info_table);
     output!(ctx, "");
 
-    let table = Table::new(
-        replica
-            .diagnostics
-            .hourly
-            .errors
-            .into_iter()
-            .map(|(code, err)| ErrorRow {
-                code,
-                count: err.count,
-                message: err.last_message,
-            }),
-    )
-    .with(Style::markdown())
-    .to_string();
-
-    output!(ctx, "{}", table);
+    let error_rows = replica
+        .diagnostics
+        .hourly
+        .errors
+        .into_iter()
+        .map(|(code, err)| ErrorRow {
+            code,
+            count: err.count,
+            message: err.last_message,
+        })
+        .collect::<Vec<_>>();
+    if let Some(table) = build_error_table(error_rows) {
+        output!(ctx, "{}", table);
+    }
     Ok(())
 }
 
@@ -122,9 +143,9 @@ mod tests {
         assert_eq!(show_replica_handler(&context, &args).await.unwrap(), ());
         let expected_info_table = build_info_table(vec![
             labeled_cell("Name", "test_replica"),
-            labeled_cell("Active", true),
-            labeled_cell("Mode", "Enabled"),
-            labeled_cell("Provisioned", false),
+            labeled_cell("Active", "✅ Ok"),
+            labeled_cell("Mode", "▶ Enabled"),
+            labeled_cell("Provisioned", "-"),
             labeled_cell("Ok Records (hourly)", 0),
             labeled_cell("Errors (hourly)", 0),
             labeled_cell("Source Bucket", "test_bucket"),
@@ -136,13 +157,30 @@ mod tests {
 
         assert_eq!(
             context.stdout().history(),
-            vec![
-                expected_info_table,
-                String::new(),
-                "| Error Code | Count | Last Message |\n|------------|-------|--------------|"
-                    .to_string()
-            ]
+            vec![expected_info_table, String::new()]
         );
+    }
+
+    #[test]
+    fn test_build_error_table_sorted() {
+        let rows = vec![
+            ErrorRow {
+                code: 500,
+                count: 1,
+                message: "Boom".to_string(),
+            },
+            ErrorRow {
+                code: 404,
+                count: 2,
+                message: "Not found".to_string(),
+            },
+        ];
+
+        let table = build_error_table(rows).unwrap();
+        assert!(table.contains("| Error Code | Count | Last Message |"));
+        let pos_404 = table.find("404").unwrap();
+        let pos_500 = table.find("500").unwrap();
+        assert!(pos_404 < pos_500);
     }
 
     #[rstest]

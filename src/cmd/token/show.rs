@@ -29,12 +29,14 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
     let client = build_client(ctx, alias_or_url).await?;
     let token = client.get_token(token_name).await?;
 
+    let bool_icon = |value: bool| if value { "✓" } else { "-" };
+
     output!(ctx, "Token: {}", token_name);
-    output!(ctx, "Created: {}", token.created_at);
-    output!(ctx, "Provisioned: {}", token.is_provisioned);
+    output!(ctx, "Created: {}", token.created_at.date_naive());
+    output!(ctx, "Provisioned: {}", bool_icon(token.is_provisioned));
 
     let permissions = token.permissions.unwrap();
-    output!(ctx, "Full Access: {}", permissions.full_access);
+    output!(ctx, "Full Access: {}", bool_icon(permissions.full_access));
     output!(ctx, "Read Buckets: {:?}", permissions.read);
     output!(ctx, "Write Buckets: {:?}", permissions.write);
 
@@ -64,9 +66,12 @@ mod tests {
         show_token(&context, &args).await.unwrap();
 
         assert_eq!(context.stdout().history()[0], "Token: test_token");
-        assert!(context.stdout().history()[1].starts_with("Created: "));
-        assert_eq!(context.stdout().history()[2], "Provisioned: false");
-        assert_eq!(context.stdout().history()[3], "Full Access: false");
+        let history = context.stdout().history();
+        assert!(history[1].starts_with("Created: "));
+        let created = history[1].strip_prefix("Created: ").unwrap();
+        assert_eq!(created.len(), 10);
+        assert_eq!(context.stdout().history()[2], "Provisioned: -");
+        assert_eq!(context.stdout().history()[3], "Full Access: -");
         assert_eq!(context.stdout().history()[4], "Read Buckets: []");
         assert_eq!(context.stdout().history()[5], "Write Buckets: []");
     }

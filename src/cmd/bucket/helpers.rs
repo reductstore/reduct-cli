@@ -7,7 +7,7 @@ use reduct_rs::ResourceStatus;
 
 pub(super) fn print_bucket_status(status: &ResourceStatus) -> String {
     match status {
-        ResourceStatus::Ready => "Ready".to_string(),
-        ResourceStatus::Deleting => "Deleting".to_string(),
+        ResourceStatus::Ready => "✅ Ready".to_string(),
+        ResourceStatus::Deleting => "🗑 Deleting".to_string(),
     }
 }

@@ -3,13 +3,14 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::cmd::replica::helpers::print_replication_mode;
+use crate::cmd::replica::helpers::format_mode_with_icon;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::io::std::output;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, Command};
 use reduct_rs::ReplicationInfo;
-use tabled::{settings::Style, Table, Tabled};
+use tabled::settings::Style;
+use tabled::{Table, Tabled};
 
 pub(super) fn ls_replica_cmd() -> Command {
     Command::new("ls")
@@ -33,28 +34,32 @@ pub(super) fn ls_replica_cmd() -> Command {
 struct ReplicationTable {
     #[tabled(rename = "Name")]
     name: String,
-    #[tabled(rename = "State")]
-    state: String,
+    #[tabled(rename = "Status")]
+    status: String,
     #[tabled(rename = "Mode")]
     mode: String,
     #[tabled(rename = "Pending Records")]
     pending_records: u64,
     #[tabled(rename = "Provisioned")]
-    is_provisioned: bool,
+    provisioned: String,
 }
 
 impl From<ReplicationInfo> for ReplicationTable {
     fn from(replication: ReplicationInfo) -> Self {
         Self {
             name: replication.name,
-            state: if replication.is_active {
-                "Active".to_string()
+            status: if replication.is_active {
+                "✅ Ok".to_string()
             } else {
-                "Inactive".to_string()
+                "❌ Error".to_string()
             },
-            mode: print_replication_mode(replication.mode),
+            mode: format_mode_with_icon(replication.mode),
             pending_records: replication.pending_records,
-            is_provisioned: replication.is_provisioned,
+            provisioned: if replication.is_provisioned {
+                "✓".to_string()
+            } else {
+                "-".to_string()
+            },
         }
     }
 }
@@ -147,9 +152,15 @@ mod tests {
         ls_replica(&context, &args).await.unwrap();
         assert_eq!(
             context.stdout().history(),
-            vec![
-                "| Name         | State  | Mode    | Pending Records | Provisioned |\n|--------------|--------|---------|-----------------|-------------|\n| test_replica | Active | Enabled | 0               | false       |"
-            ]
+            vec![Table::new(vec![ReplicationTable {
+                name: "test_replica".to_string(),
+                status: "✅ Ok".to_string(),
+                mode: "▶ Enabled".to_string(),
+                pending_records: 0,
+                provisioned: "-".to_string(),
+            }])
+            .with(Style::markdown())
+            .to_string()]
         );
     }
 }

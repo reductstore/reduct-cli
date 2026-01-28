@@ -28,7 +28,7 @@ pub(super) async fn get_server_status(
     let client = build_client(ctx, alias).await?;
     let info = client.server_info().await?;
 
-    output!(ctx, "Status: \tOk");
+    output!(ctx, "Status: \tOk ✅");
     output!(ctx, "Version:\t{}", info.version);
     output!(
         ctx,
@@ -61,7 +61,7 @@ mod tests {
         let args = server_status_cmd().get_matches_from(vec!["status", "local"]);
         get_server_status(&context, &args).await.unwrap();
         assert_eq!(context.stdout().history().len(), 4);
-        assert_eq!(context.stdout().history()[0], "Status: \tOk");
+        assert_eq!(context.stdout().history()[0], "Status: \tOk ✅");
         assert!(context.stdout().history()[1].starts_with("Version:\t1."));
         assert!(context.stdout().history()[2].starts_with("Uptime: \t"));
         assert_eq!(
