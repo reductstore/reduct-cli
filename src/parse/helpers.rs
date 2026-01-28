@@ -1,4 +1,4 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -68,6 +68,7 @@ pub(crate) struct QueryParams {
     pub when: Option<Value>,
     pub strict: bool,
     pub ext: Option<Value>,
+    pub quiet: bool,
 }
 
 impl Default for QueryParams {
@@ -84,6 +85,7 @@ impl Default for QueryParams {
             when: None,
             strict: false,
             ext: None,
+            quiet: false,
         }
     }
 }
@@ -98,6 +100,7 @@ pub(crate) fn parse_query_params(
     let each_s = args.get_one::<f64>("each-s").map(|s| *s);
     let when = args.get_one::<String>("when").map(|s| s.to_string());
     let strict = args.get_one::<bool>("strict").unwrap_or(&false);
+    let quiet = args.get_flag("quiet");
     let ext_params = match args.try_get_one::<String>("ext-params") {
         Ok(s) => s.cloned(),
         Err(MatchesError::UnknownArgument { .. }) => None, // ext-params is optional for some commands
@@ -151,6 +154,7 @@ pub(crate) fn parse_query_params(
         when: json_when,
         strict: *strict,
         ext: ext_json,
+        quiet,
     })
 }
 

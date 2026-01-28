@@ -86,6 +86,7 @@ mod tests {
             when: None,
             strict: false,
             ext: None,
+            quiet: false,
         };
 
         let query_remover = QueryRemover::new(bucket, query_params);

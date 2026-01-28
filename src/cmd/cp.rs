@@ -1,4 +1,4 @@
-// Copyright 2024 ReductStore
+// Copyright 2024-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -141,6 +141,14 @@ pub(crate) fn cp_cmd() -> Command {
                 .action(SetTrue)
         )
         .arg(
+            Arg::new("quiet")
+                .long("quiet")
+                .short('q')
+                .help("Only show errors and the final completion message.")
+                .required(false)
+                .action(SetTrue)
+        )
+        .arg(
             make_ext_arg()
         )
 }
@@ -217,15 +225,18 @@ async fn cp_all_buckets(
 ) -> anyhow::Result<()> {
     let src_client = build_client(ctx, src_instance).await?;
     let bucket_list = src_client.bucket_list().await?;
+    let quiet = args.get_flag("quiet");
 
     for bucket in bucket_list.buckets {
-        output!(
-            ctx,
-            "Copying bucket '{}' from '{}' to '{}'",
-            bucket.name,
-            src_instance,
-            dst_instance
-        );
+        if !quiet {
+            output!(
+                ctx,
+                "Copying bucket '{}' from '{}' to '{}'",
+                bucket.name,
+                src_instance,
+                dst_instance
+            );
+        }
         cp_bucket_to_bucket_with(
             ctx,
             args,
