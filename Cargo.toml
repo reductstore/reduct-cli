@@ -15,7 +15,7 @@ description = "A CLI client for ReductStore written in Rust"
 
 [dependencies]
 reduct-rs = { git="https://github.com/reductstore/reduct-rs.git", branch="main"}
-clap = { version = "4.5.53", features = ["cargo"] }
+clap = { version = "4.5.56", features = ["cargo"] }
 dirs = "6.0.0"
 toml = "0.9.8"
 serde = { version = "1.0.219", features = ["derive"] }
