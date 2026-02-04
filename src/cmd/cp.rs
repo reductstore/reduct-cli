@@ -425,7 +425,11 @@ mod tests {
         let dst = args
             .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
             .unwrap();
-        assert!(matches!(dst, CpPath::Instance(value) if value == "https://example.com"));
+        assert!(matches!(
+            dst,
+            CpPath::Instance(value)
+            if value == "https://example.com/"
+        ));
 
         let result = cp_handler(&context, &args).await;
         assert!(result.is_err());
