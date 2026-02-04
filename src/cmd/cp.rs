@@ -52,27 +52,33 @@ impl TypedValueParser for CpPathParser {
             return Ok(CpPath::Folder(value));
         }
 
-        if let Ok(url) = Url::parse(&value) {
+        if let Ok(mut url) = Url::parse(&value) {
             let scheme = url.scheme();
             if scheme == "http" || scheme == "https" {
-                let path = url.path().trim_start_matches('/');
-                let bucket = path.trim_end_matches('/');
-                if bucket.is_empty() {
-                    return Ok(CpPath::Instance(value));
+                url.set_query(None);
+                url.set_fragment(None);
+
+                let path = url.path();
+                let has_trailing_slash = path.ends_with('/') && path != "/";
+                let mut segments: Vec<&str> = url
+                    .path_segments()
+                    .map(|segments| segments.filter(|segment| !segment.is_empty()).collect())
+                    .unwrap_or_default();
+
+                if segments.is_empty() || has_trailing_slash {
+                    return Ok(CpPath::Instance(url.to_string()));
                 }
-                if bucket.contains('/') {
-                    let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
-                    err.insert(
-                        ContextKind::InvalidArg,
-                        ContextValue::String(arg.unwrap().to_string()),
-                    );
-                    err.insert(ContextKind::InvalidValue, ContextValue::String(value));
-                    return Err(err);
-                }
+
+                let bucket = segments
+                    .pop()
+                    .ok_or_else(|| Error::new(ErrorKind::ValueValidation).with_cmd(cmd))?;
+                let base_path = if segments.is_empty() {
+                    "/".to_string()
+                } else {
+                    format!("/{}/", segments.join("/"))
+                };
                 let mut base_url = url.clone();
-                base_url.set_path("/");
-                base_url.set_query(None);
-                base_url.set_fragment(None);
+                base_url.set_path(&base_path);
                 return Ok(CpPath::Bucket {
                     instance: base_url.to_string(),
                     bucket: bucket.to_string(),
@@ -419,10 +425,46 @@ mod tests {
         let dst = args
             .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
             .unwrap();
-        assert!(matches!(dst, CpPath::Instance(value) if value == "https://example.com"));
+        assert!(matches!(
+            dst,
+            CpPath::Instance(value)
+            if value == "https://example.com/"
+        ));
 
         let result = cp_handler(&context, &args).await;
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn url_with_base_path_parses_bucket() {
+        let args = cp_cmd()
+            .try_get_matches_from(vec![
+                "cp",
+                "https://reductstore@play.reduct.store/replica/datasets",
+                "./tmp",
+            ])
+            .unwrap();
+        let src = args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap();
+        assert!(matches!(
+            src,
+            CpPath::Bucket { instance, bucket }
+            if instance == "https://reductstore@play.reduct.store/replica/" && bucket == "datasets"
+        ));
+    }
+
+    #[test]
+    fn url_with_trailing_slash_parses_as_instance() {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/bucket", "https://example.com/api/"])
+            .unwrap();
+        let dst = args
+            .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+            .unwrap();
+        assert!(matches!(
+            dst,
+            CpPath::Instance(value)
+            if value == "https://example.com/api/"
+        ));
     }
 
     #[test]
