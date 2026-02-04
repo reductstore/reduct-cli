@@ -9,18 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.10.0 - 2026-02-04
 
-### Changed
+### Added
 
 - Add batching in reduct-cli for cp command, [PR-148](https://github.com/reductstore/reduct-cli/pull/148)
 - Show bucket status and update copy/removal handling, [PR-167](https://github.com/reductstore/reduct-cli/pull/167)
 - Add replica mode commands and mode-aware outputs, [PR-168](https://github.com/reductstore/reduct-cli/pull/168)
 - Add --from-last option for incremental cp, [PR-169](https://github.com/reductstore/reduct-cli/pull/169)
 - Add wildcard cp and improved progress reporting, [PR-170](https://github.com/reductstore/reduct-cli/pull/170)
+
+### Changed
+
 - Improve cp URL parsing and CLI status tables, [PR-172](https://github.com/reductstore/reduct-cli/pull/172)
 
 ## 0.9.4 - 2025-12-17
 
-### Changes
+### Changed
 
 - Update reduct-rs to 1.17.2 with cookie jar support
 
