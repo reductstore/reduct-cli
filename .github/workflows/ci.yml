@@ -39,6 +39,7 @@ jobs:
           [
             "x86_64-unknown-linux-gnu",
             "aarch64-unknown-linux-gnu",
+            "armv7-unknown-linux-gnueabihf",
             "x86_64-pc-windows-gnu",
             "x86_64-apple-darwin",
             "aarch64-apple-darwin",
@@ -50,6 +51,9 @@ jobs:
           - target: "aarch64-unknown-linux-gnu"
             os: ubuntu-24.04
             compiler: "gcc-aarch64-linux-gnu"
+          - target: "armv7-unknown-linux-gnueabihf"
+            os: ubuntu-24.04
+            compiler: "gcc-arm-linux-gnueabihf"
           - target: "x86_64-pc-windows-gnu"
             os: ubuntu-24.04
             compiler: "gcc-mingw-w64-x86-64"
@@ -196,6 +200,7 @@ jobs:
         target: [
           "x86_64-unknown-linux-gnu",
           "aarch64-unknown-linux-gnu",
+          "armv7-unknown-linux-gnueabihf",
           "x86_64-pc-windows-gnu",
           "x86_64-apple-darwin",
           "aarch64-apple-darwin",
