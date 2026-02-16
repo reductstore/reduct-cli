@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 0.10.2 - 2026-02-16
+
 ### Added
 
 - Add Linux ARM32 CI/CD artifacts, [PR-177](https://github.com/reductstore/reduct-cli/pull/177)
