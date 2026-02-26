@@ -34,20 +34,11 @@ pub(super) async fn ls_attachment(ctx: &CliContext, args: &ArgMatches) -> anyhow
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::attachment::helpers::test_utils::create_bucket;
     use crate::context::tests::context;
-    use crate::io::reduct::build_client;
     use rstest::rstest;
     use serde_json::json;
     use std::collections::HashMap;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_bucket_name(prefix: &str) -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}-{}", prefix, nanos)
-    }
 
     #[test]
     fn test_bad_entry_path() {
@@ -61,9 +52,7 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_ls_attachments(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-ls");
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-ls").await.unwrap();
         bucket
             .write_attachments(
                 "entry-1",
@@ -86,9 +75,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_ls_attachments_empty(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-ls-empty");
-        let client = build_client(&context, "local").await.unwrap();
-        client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, _) = create_bucket(&context, "test-attachment-ls-empty")
+            .await
+            .unwrap();
 
         let args = ls_attachment_cmd()
             .try_get_matches_from(vec!["ls", &format!("local/{}/entry-1", bucket_name)])

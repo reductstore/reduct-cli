@@ -86,20 +86,11 @@ pub(super) async fn rm_attachment(ctx: &CliContext, args: &ArgMatches) -> anyhow
 mod tests {
     use super::*;
     use crate::cmd::attachment::helpers::read_attachments_or_empty;
+    use crate::cmd::attachment::helpers::test_utils::create_bucket;
     use crate::context::tests::context;
-    use crate::io::reduct::build_client;
     use rstest::rstest;
     use serde_json::json;
     use std::collections::HashMap;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_bucket_name(prefix: &str) -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}-{}", prefix, nanos)
-    }
 
     #[test]
     fn test_bad_entry_path() {
@@ -136,9 +127,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_rm_selected_attachments(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-rm-key");
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-rm-key")
+            .await
+            .unwrap();
         bucket
             .write_attachments(
                 "entry-1",
@@ -167,9 +158,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_rm_all_attachments(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-rm-all");
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-rm-all")
+            .await
+            .unwrap();
         bucket
             .write_attachments(
                 "entry-1",
@@ -194,9 +185,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_rm_missing_entry(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-rm-missing");
-        let client = build_client(&context, "local").await.unwrap();
-        client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, _) = create_bucket(&context, "test-attachment-rm-missing")
+            .await
+            .unwrap();
 
         let args = rm_attachment_cmd()
             .try_get_matches_from(vec![

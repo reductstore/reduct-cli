@@ -63,8 +63,8 @@ pub(super) async fn write_attachment(ctx: &CliContext, args: &ArgMatches) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
-    use crate::io::reduct::build_client;
+    use crate::cmd::attachment::helpers::test_utils::create_bucket;
+    use crate::context::tests::context;
     use rstest::rstest;
     use serde_json::json;
 
@@ -100,10 +100,10 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_write_attachment(context: CliContext, #[future] bucket: String) {
-        let bucket_name = bucket.await;
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+    async fn test_write_attachment(context: CliContext) {
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-write")
+            .await
+            .unwrap();
         let args = write_attachment_cmd()
             .try_get_matches_from(vec![
                 "write",

@@ -74,3 +74,29 @@ pub(super) async fn read_attachments_or_empty(
         Err(err) => Err(err.into()),
     }
 }
+
+#[cfg(test)]
+pub(crate) mod test_utils {
+    use crate::context::CliContext;
+    use crate::io::reduct::build_client;
+    use reduct_rs::Bucket;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    pub(crate) fn unique_bucket_name(prefix: &str) -> String {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("{}-{}", prefix, nanos)
+    }
+
+    pub(crate) async fn create_bucket(
+        context: &CliContext,
+        prefix: &str,
+    ) -> anyhow::Result<(String, Bucket)> {
+        let bucket_name = unique_bucket_name(prefix);
+        let client = build_client(context, "local").await?;
+        let bucket = client.create_bucket(&bucket_name).send().await?;
+        Ok((bucket_name, bucket))
+    }
+}

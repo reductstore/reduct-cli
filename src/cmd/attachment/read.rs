@@ -61,20 +61,11 @@ pub(super) async fn read_attachment(ctx: &CliContext, args: &ArgMatches) -> anyh
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::attachment::helpers::test_utils::create_bucket;
     use crate::context::tests::context;
-    use crate::io::reduct::build_client;
     use rstest::rstest;
     use serde_json::json;
     use std::collections::HashMap;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_bucket_name(prefix: &str) -> String {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        format!("{}-{}", prefix, nanos)
-    }
 
     #[test]
     fn test_bad_entry_path() {
@@ -88,9 +79,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_read_all_attachments(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-read-all");
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-read-all")
+            .await
+            .unwrap();
         bucket
             .write_attachments(
                 "entry-1",
@@ -119,9 +110,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_read_selected_attachments(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-read-key");
-        let client = build_client(&context, "local").await.unwrap();
-        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, bucket) = create_bucket(&context, "test-attachment-read-key")
+            .await
+            .unwrap();
         bucket
             .write_attachments(
                 "entry-1",
@@ -147,9 +138,9 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_read_missing_attachment(context: CliContext) {
-        let bucket_name = unique_bucket_name("test-attachment-read-missing");
-        let client = build_client(&context, "local").await.unwrap();
-        client.create_bucket(&bucket_name).send().await.unwrap();
+        let (bucket_name, _) = create_bucket(&context, "test-attachment-read-missing")
+            .await
+            .unwrap();
 
         let args = read_attachment_cmd()
             .try_get_matches_from(vec![
