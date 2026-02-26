@@ -61,7 +61,7 @@ pub(super) async fn read_attachment(ctx: &CliContext, args: &ArgMatches) -> anyh
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd::attachment::helpers::test_utils::create_bucket;
+    use crate::cmd::attachment::helpers::test_utils::{create_bucket, remove_bucket};
     use crate::context::tests::context;
     use rstest::rstest;
     use serde_json::json;
@@ -97,6 +97,7 @@ mod tests {
             .try_get_matches_from(vec!["read", &format!("local/{}/entry-1", bucket_name)])
             .unwrap();
         read_attachment(&context, &args).await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
 
         assert_eq!(
             context.stdout().history(),
@@ -129,6 +130,8 @@ mod tests {
             ])
             .unwrap();
         read_attachment(&context, &args).await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
+
         assert_eq!(
             context.stdout().history(),
             vec!["schema: {\"type\":\"object\"}"]
@@ -150,6 +153,8 @@ mod tests {
             ])
             .unwrap();
         let err = read_attachment(&context, &args).await.err().unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
+
         assert!(err
             .to_string()
             .contains("Attachment 'key' not found in 'local/"));

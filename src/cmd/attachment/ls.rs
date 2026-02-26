@@ -34,7 +34,7 @@ pub(super) async fn ls_attachment(ctx: &CliContext, args: &ArgMatches) -> anyhow
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd::attachment::helpers::test_utils::create_bucket;
+    use crate::cmd::attachment::helpers::test_utils::{create_bucket, remove_bucket};
     use crate::context::tests::context;
     use rstest::rstest;
     use serde_json::json;
@@ -68,6 +68,7 @@ mod tests {
             .try_get_matches_from(vec!["ls", &format!("local/{}/entry-1", bucket_name)])
             .unwrap();
         ls_attachment(&context, &args).await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
 
         assert_eq!(context.stdout().history(), vec!["prompt", "schema"]);
     }
@@ -83,6 +84,7 @@ mod tests {
             .try_get_matches_from(vec!["ls", &format!("local/{}/entry-1", bucket_name)])
             .unwrap();
         ls_attachment(&context, &args).await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
 
         assert!(context.stdout().history().is_empty());
     }

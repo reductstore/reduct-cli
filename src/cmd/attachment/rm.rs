@@ -86,7 +86,7 @@ pub(super) async fn rm_attachment(ctx: &CliContext, args: &ArgMatches) -> anyhow
 mod tests {
     use super::*;
     use crate::cmd::attachment::helpers::read_attachments_or_empty;
-    use crate::cmd::attachment::helpers::test_utils::create_bucket;
+    use crate::cmd::attachment::helpers::test_utils::{create_bucket, remove_bucket};
     use crate::context::tests::context;
     use rstest::rstest;
     use serde_json::json;
@@ -151,6 +151,8 @@ mod tests {
         rm_attachment(&context, &args).await.unwrap();
 
         let attachments = read_attachments_or_empty(&bucket, "entry-1").await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
+
         assert_eq!(attachments.len(), 1);
         assert!(attachments.contains_key("schema"));
     }
@@ -179,6 +181,8 @@ mod tests {
         rm_attachment(&context, &args).await.unwrap();
 
         let attachments = read_attachments_or_empty(&bucket, "entry-1").await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
+
         assert!(attachments.is_empty());
     }
 
@@ -197,5 +201,6 @@ mod tests {
             ])
             .unwrap();
         rm_attachment(&context, &args).await.unwrap();
+        remove_bucket(&context, &bucket_name).await.unwrap();
     }
 }

@@ -79,8 +79,10 @@ pub(super) async fn read_attachments_or_empty(
 pub(crate) mod test_utils {
     use crate::context::CliContext;
     use crate::io::reduct::build_client;
-    use reduct_rs::Bucket;
+    use reduct_rs::{Bucket, ErrorCode};
+    use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
+    use tokio::time::sleep;
 
     pub(crate) fn unique_bucket_name(prefix: &str) -> String {
         let nanos = SystemTime::now()
@@ -98,5 +100,29 @@ pub(crate) mod test_utils {
         let client = build_client(context, "local").await?;
         let bucket = client.create_bucket(&bucket_name).send().await?;
         Ok((bucket_name, bucket))
+    }
+
+    pub(crate) async fn remove_bucket(
+        context: &CliContext,
+        bucket_name: &str,
+    ) -> anyhow::Result<()> {
+        let client = build_client(context, "local").await?;
+        if let Ok(bucket) = client.get_bucket(bucket_name).await {
+            bucket.remove().await?;
+        }
+
+        for _ in 0..50 {
+            match client.get_bucket(bucket_name).await {
+                Ok(_) => sleep(Duration::from_millis(100)).await,
+                Err(err) => {
+                    if err.status() == ErrorCode::NotFound {
+                        return Ok(());
+                    }
+                    sleep(Duration::from_millis(100)).await
+                }
+            }
+        }
+
+        anyhow::bail!("Bucket '{}' was not removed in time", bucket_name);
     }
 }
