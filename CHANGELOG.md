@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add `attachment write` command for entry attachments.
+
 ## 0.10.2 - 2026-02-16
 
 ### Added
