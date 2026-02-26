@@ -18,12 +18,69 @@ use tokio::time::{sleep, Instant};
 const DOWNLOAD_ATTEMPTS: u8 = 10;
 const NUMBER_DOWNLOAD_LIMIT: i8 = 80;
 const MEMORY_AMOUNT_LIMIT: isize = 8192; //8000?  1000 kB kilobyte, 1024 KiB kibibyte
+
+#[derive(Clone, Copy)]
+struct TimeWindow {
+    start: u64,
+    stop: u64,
+}
+
+impl TimeWindow {
+    fn span(self) -> u64 {
+        self.stop.saturating_sub(self.start).saturating_add(1)
+    }
+}
+
+enum ProgressMetric {
+    Records {
+        total: u64,
+    },
+    Time {
+        total: u64,
+        windows: HashMap<String, TimeWindow>,
+        covered_by_entry: HashMap<String, u64>,
+        covered_total: u64,
+    },
+}
+
+impl ProgressMetric {
+    fn total(&self) -> u64 {
+        match self {
+            ProgressMetric::Records { total } => *total,
+            ProgressMetric::Time { total, .. } => *total,
+        }
+    }
+
+    fn update_position(&mut self, entry_name: &str, timestamp: u64, record_count: u64) -> u64 {
+        match self {
+            ProgressMetric::Records { total } => record_count.min(*total),
+            ProgressMetric::Time {
+                total,
+                windows,
+                covered_by_entry,
+                covered_total,
+            } => {
+                if let Some(window) = windows.get(entry_name) {
+                    let covered = covered_span(window, timestamp);
+                    let prev = covered_by_entry.get(entry_name).copied().unwrap_or(0);
+                    if covered > prev {
+                        let diff = covered - prev;
+                        *covered_total = covered_total.saturating_add(diff);
+                        covered_by_entry.insert(entry_name.to_string(), covered);
+                    }
+                }
+                (*covered_total).min(*total)
+            }
+        }
+    }
+}
+
 pub(super) struct BucketProgress {
     bucket_name: String,
     displayed_entries: Vec<String>,
     display_limit: usize,
     total_entries: usize,
-    total_records: u64,
+    progress_metric: ProgressMetric,
     entry_stats: HashMap<String, (u64, u64)>,
     transferred_bytes: u64,
     record_count: u64,
@@ -35,23 +92,22 @@ pub(super) struct BucketProgress {
 }
 
 impl BucketProgress {
-    pub(super) fn new(
+    fn new(
         bucket_name: String,
         display_limit: usize,
         total_entries: usize,
-        total_records: u64,
+        progress_metric: ProgressMetric,
         progress: &MultiProgress,
         quiet: bool,
     ) -> Self {
         let progress_bar = init_bucket_progress_bar(progress, quiet);
-        let total_records = total_records.max(1);
 
         let me = Self {
             bucket_name,
             displayed_entries: Vec::new(),
             display_limit: display_limit.max(1),
             total_entries,
-            total_records,
+            progress_metric,
             entry_stats: HashMap::new(),
             transferred_bytes: 0,
             record_count: 0,
@@ -63,13 +119,14 @@ impl BucketProgress {
         };
 
         if !me.quiet {
-            me.progress_bar.set_length(me.total_records);
+            me.progress_bar
+                .set_length(me.progress_metric.total().max(1));
             me.progress_bar.set_message(me.message());
         }
         me
     }
 
-    pub(super) fn update(&mut self, entry_name: &str, content_length: u64) {
+    pub(super) fn update(&mut self, entry_name: &str, timestamp: u64, content_length: u64) {
         self.transferred_bytes += content_length;
         self.record_count += 1;
         self.history.push((content_length, Instant::now()));
@@ -100,8 +157,10 @@ impl BucketProgress {
             };
 
         if !self.quiet {
-            self.progress_bar
-                .set_position(self.record_count.min(self.total_records));
+            let position =
+                self.progress_metric
+                    .update_position(entry_name, timestamp, self.record_count);
+            self.progress_bar.set_position(position);
             self.progress_bar.set_message(self.message());
         }
     }
@@ -115,7 +174,7 @@ impl BucketProgress {
 
     pub(crate) fn done(&self) {
         if !self.quiet {
-            self.progress_bar.set_position(self.total_records);
+            self.progress_bar.set_position(self.progress_metric.total());
             let msg = format!(
                 "Copied {} records from bucket '{}' ({}, {}/s)\n{}",
                 self.record_count,
@@ -291,21 +350,16 @@ where
     let display_limit = query_params.parallel.max(1);
     let bucket_name = src_bucket.name().to_string();
     let quiet = query_params.quiet;
-    let total_records = entries
-        .iter()
-        .map(|entry| {
-            if let Some(limit) = query_params.limit {
-                entry.record_count.min(limit)
-            } else {
-                entry.record_count
-            }
-        })
-        .sum();
+    let progress_metric = build_progress_metric(
+        &entries,
+        &query_params,
+        entry_start_overrides.as_ref().map(|v| v.as_ref()),
+    );
     let bucket_progress = Arc::new(Mutex::new(BucketProgress::new(
         bucket_name,
         display_limit,
         entries.len(),
-        total_records,
+        progress_metric,
         &progress,
         quiet,
     )));
@@ -377,6 +431,93 @@ fn entry_start_override(
     entry_start_overrides: Option<&HashMap<String, u64>>,
 ) -> Option<u64> {
     entry_start_overrides.and_then(|overrides| overrides.get(&entry.name).copied())
+}
+
+fn covered_span(window: &TimeWindow, timestamp: u64) -> u64 {
+    if timestamp < window.start {
+        0
+    } else {
+        timestamp
+            .min(window.stop)
+            .saturating_sub(window.start)
+            .saturating_add(1)
+    }
+}
+
+fn entry_time_window(
+    entry: &EntryInfo,
+    query_params: &QueryParams,
+    entry_start_overrides: Option<&HashMap<String, u64>>,
+) -> Option<TimeWindow> {
+    if entry.record_count == 0 {
+        return None;
+    }
+
+    let override_start = if query_params.start.is_none() {
+        entry_start_override(entry, entry_start_overrides)
+    } else {
+        None
+    };
+
+    let effective_start = query_params.start.or(override_start);
+    let start = effective_start
+        .map(|start| start.max(entry.oldest_record))
+        .unwrap_or(entry.oldest_record);
+    let stop = query_params
+        .stop
+        .map(|stop| stop.min(entry.latest_record))
+        .unwrap_or(entry.latest_record);
+
+    if start > stop {
+        None
+    } else {
+        Some(TimeWindow { start, stop })
+    }
+}
+
+fn build_progress_metric(
+    entries: &[EntryInfo],
+    query_params: &QueryParams,
+    entry_start_overrides: Option<&HashMap<String, u64>>,
+) -> ProgressMetric {
+    if let Some(limit) = query_limit(query_params) {
+        let total = entries
+            .iter()
+            .map(|entry| entry.record_count.min(limit))
+            .sum::<u64>()
+            .max(1);
+        return ProgressMetric::Records { total };
+    }
+
+    let mut windows = HashMap::new();
+    let mut total = 0_u64;
+    for entry in entries {
+        if let Some(window) = entry_time_window(entry, query_params, entry_start_overrides) {
+            total = total.saturating_add(window.span());
+            windows.insert(entry.name.clone(), window);
+        }
+    }
+
+    ProgressMetric::Time {
+        total: total.max(1),
+        windows,
+        covered_by_entry: HashMap::new(),
+        covered_total: 0,
+    }
+}
+
+fn query_limit(query_params: &QueryParams) -> Option<u64> {
+    query_params.limit.or_else(|| {
+        query_params.when.as_ref().and_then(|when| {
+            when.as_object()
+                .and_then(|obj| obj.get("$limit"))
+                .and_then(|value| {
+                    value
+                        .as_u64()
+                        .or_else(|| value.as_i64().filter(|v| *v >= 0).map(|v| v as u64))
+                })
+        })
+    })
 }
 
 struct EntryCopyOutcome {
@@ -545,7 +686,7 @@ async fn flush_batch<V: CopyVisitor + ?Sized>(
         *record_count += 1;
         *timestamp = ts;
         if let Ok(mut progress) = bucket_progress.lock() {
-            progress.update(entry_name, len);
+            progress.update(entry_name, ts, len);
         }
         sleep(Duration::from_micros(5)).await;
     }
@@ -611,34 +752,140 @@ mod tests {
 
     mod progress {
         use super::*;
+        use reduct_rs::EntryInfo;
 
         #[test]
-        fn test_progress_uses_fixed_total_length() {
+        fn test_progress_uses_fixed_record_total_with_limit() {
             let progress = MultiProgress::new();
-            let mut bucket_progress =
-                BucketProgress::new("test".to_string(), 1, 1, 100, &progress, false);
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                1,
+                1,
+                ProgressMetric::Records { total: 100 },
+                &progress,
+                false,
+            );
 
             assert_eq!(bucket_progress.progress_bar.length(), Some(100));
             assert_eq!(bucket_progress.progress_bar.position(), 0);
 
-            bucket_progress.update("entry-1", 10);
+            bucket_progress.update("entry-1", 1, 10);
             assert_eq!(bucket_progress.progress_bar.length(), Some(100));
             assert_eq!(bucket_progress.progress_bar.position(), 1);
 
-            bucket_progress.update("entry-1", 10);
+            bucket_progress.update("entry-1", 2, 10);
             assert_eq!(bucket_progress.progress_bar.length(), Some(100));
             assert_eq!(bucket_progress.progress_bar.position(), 2);
         }
 
         #[test]
-        fn test_done_sets_progress_to_complete() {
+        fn test_done_sets_progress_to_complete_for_records() {
             let progress = MultiProgress::new();
-            let mut bucket_progress =
-                BucketProgress::new("test".to_string(), 1, 1, 10, &progress, false);
-            bucket_progress.update("entry-1", 10);
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                1,
+                1,
+                ProgressMetric::Records { total: 10 },
+                &progress,
+                false,
+            );
+            bucket_progress.update("entry-1", 1, 10);
             bucket_progress.done();
 
             assert_eq!(bucket_progress.progress_bar.position(), 10);
+        }
+
+        #[test]
+        fn test_build_progress_metric_uses_time_windows_without_limit() {
+            let entries = vec![
+                EntryInfo {
+                    name: "a".to_string(),
+                    oldest_record: 100,
+                    latest_record: 200,
+                    record_count: 101,
+                    ..Default::default()
+                },
+                EntryInfo {
+                    name: "b".to_string(),
+                    oldest_record: 400,
+                    latest_record: 500,
+                    record_count: 101,
+                    ..Default::default()
+                },
+            ];
+            let params = QueryParams {
+                start: Some(150),
+                stop: Some(450),
+                ..Default::default()
+            };
+
+            let metric = build_progress_metric(&entries, &params, None);
+            match metric {
+                ProgressMetric::Time { total, windows, .. } => {
+                    assert_eq!(total, 102);
+                    assert_eq!(windows.get("a").unwrap().start, 150);
+                    assert_eq!(windows.get("a").unwrap().stop, 200);
+                    assert_eq!(windows.get("b").unwrap().start, 400);
+                    assert_eq!(windows.get("b").unwrap().stop, 450);
+                }
+                ProgressMetric::Records { .. } => panic!("expected time progress"),
+            }
+        }
+
+        #[test]
+        fn test_build_progress_metric_uses_record_count_when_limit_in_when() {
+            let entries = vec![EntryInfo {
+                name: "a".to_string(),
+                oldest_record: 100,
+                latest_record: 200,
+                record_count: 1000,
+                ..Default::default()
+            }];
+            let params = QueryParams {
+                when: Some(serde_json::json!({ "$limit": 100 })),
+                ..Default::default()
+            };
+
+            let metric = build_progress_metric(&entries, &params, None);
+            match metric {
+                ProgressMetric::Records { total } => assert_eq!(total, 100),
+                ProgressMetric::Time { .. } => panic!("expected record progress"),
+            }
+        }
+
+        #[test]
+        fn test_time_progress_updates_by_timestamp() {
+            let progress = MultiProgress::new();
+            let mut windows = HashMap::new();
+            windows.insert(
+                "entry-1".to_string(),
+                TimeWindow {
+                    start: 100,
+                    stop: 199,
+                },
+            );
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                1,
+                1,
+                ProgressMetric::Time {
+                    total: 100,
+                    windows,
+                    covered_by_entry: HashMap::new(),
+                    covered_total: 0,
+                },
+                &progress,
+                false,
+            );
+
+            bucket_progress.update("entry-1", 100, 10);
+            assert_eq!(bucket_progress.progress_bar.position(), 1);
+
+            bucket_progress.update("entry-1", 150, 10);
+            assert_eq!(bucket_progress.progress_bar.position(), 51);
+
+            bucket_progress.update("entry-1", 1000, 10);
+            assert_eq!(bucket_progress.progress_bar.position(), 100);
         }
     }
 
