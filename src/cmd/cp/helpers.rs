@@ -23,6 +23,7 @@ pub(super) struct BucketProgress {
     displayed_entries: Vec<String>,
     display_limit: usize,
     total_entries: usize,
+    total_records: u64,
     entry_stats: HashMap<String, (u64, u64)>,
     transferred_bytes: u64,
     record_count: u64,
@@ -38,16 +39,19 @@ impl BucketProgress {
         bucket_name: String,
         display_limit: usize,
         total_entries: usize,
+        total_records: u64,
         progress: &MultiProgress,
         quiet: bool,
     ) -> Self {
         let progress_bar = init_bucket_progress_bar(progress, quiet);
+        let total_records = total_records.max(1);
 
         let me = Self {
             bucket_name,
             displayed_entries: Vec::new(),
             display_limit: display_limit.max(1),
             total_entries,
+            total_records,
             entry_stats: HashMap::new(),
             transferred_bytes: 0,
             record_count: 0,
@@ -59,6 +63,7 @@ impl BucketProgress {
         };
 
         if !me.quiet {
+            me.progress_bar.set_length(me.total_records);
             me.progress_bar.set_message(me.message());
         }
         me
@@ -96,8 +101,7 @@ impl BucketProgress {
 
         if !self.quiet {
             self.progress_bar
-                .set_length(self.record_count.saturating_add(1));
-            self.progress_bar.set_position(self.record_count);
+                .set_position(self.record_count.min(self.total_records));
             self.progress_bar.set_message(self.message());
         }
     }
@@ -111,6 +115,7 @@ impl BucketProgress {
 
     pub(crate) fn done(&self) {
         if !self.quiet {
+            self.progress_bar.set_position(self.total_records);
             let msg = format!(
                 "Copied {} records from bucket '{}' ({}, {}/s)\n{}",
                 self.record_count,
@@ -286,10 +291,21 @@ where
     let display_limit = query_params.parallel.max(1);
     let bucket_name = src_bucket.name().to_string();
     let quiet = query_params.quiet;
+    let total_records = entries
+        .iter()
+        .map(|entry| {
+            if let Some(limit) = query_params.limit {
+                entry.record_count.min(limit)
+            } else {
+                entry.record_count
+            }
+        })
+        .sum();
     let bucket_progress = Arc::new(Mutex::new(BucketProgress::new(
         bucket_name,
         display_limit,
         entries.len(),
+        total_records,
         &progress,
         quiet,
     )));
@@ -382,6 +398,27 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
     let mut attempts = DOWNLOAD_ATTEMPTS;
     let entry_name = entry.name.clone();
 
+    macro_rules! flush_batch_or_return {
+        ($batch:expr) => {
+            if let Err(err) = flush_batch(
+                &entry.name,
+                &mut $batch,
+                visitor.as_ref(),
+                &bucket_progress,
+                &mut attempts,
+                &mut timestamp,
+                &mut record_count,
+            )
+            .await
+            {
+                return EntryCopyOutcome {
+                    entry_name,
+                    result: Err(err),
+                };
+            }
+        };
+    }
+
     while attempts > 0 {
         let query_builder = build_query(&bucket, &entry, &params);
 
@@ -444,39 +481,9 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
 
             let content_length = record.content_length() as isize;
             if content_length >= MEMORY_AMOUNT_LIMIT {
-                if let Err(err) = flush_batch(
-                    &entry.name,
-                    &mut batch,
-                    visitor.as_ref(),
-                    &bucket_progress,
-                    &mut attempts,
-                    &mut timestamp,
-                    &mut record_count,
-                )
-                .await
-                {
-                    return EntryCopyOutcome {
-                        entry_name,
-                        result: Err(err),
-                    };
-                }
+                flush_batch_or_return!(batch);
                 batch.push(record);
-                if let Err(err) = flush_batch(
-                    &entry.name,
-                    &mut batch,
-                    visitor.as_ref(),
-                    &bucket_progress,
-                    &mut attempts,
-                    &mut timestamp,
-                    &mut record_count,
-                )
-                .await
-                {
-                    return EntryCopyOutcome {
-                        entry_name,
-                        result: Err(err),
-                    };
-                }
+                flush_batch_or_return!(batch);
                 number = NUMBER_DOWNLOAD_LIMIT;
                 memory = MEMORY_AMOUNT_LIMIT;
                 continue;
@@ -484,22 +491,7 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
 
             memory -= content_length;
             if memory < 0 || number == 0 {
-                if let Err(err) = flush_batch(
-                    &entry.name,
-                    &mut batch,
-                    visitor.as_ref(),
-                    &bucket_progress,
-                    &mut attempts,
-                    &mut timestamp,
-                    &mut record_count,
-                )
-                .await
-                {
-                    return EntryCopyOutcome {
-                        entry_name,
-                        result: Err(err),
-                    };
-                }
+                flush_batch_or_return!(batch);
                 batch.push(record);
                 number = NUMBER_DOWNLOAD_LIMIT.saturating_sub(1);
                 memory = MEMORY_AMOUNT_LIMIT - content_length;
@@ -513,22 +505,7 @@ async fn run_entry_copy<V: CopyVisitor + ?Sized>(
         }
 
         if !retry {
-            if let Err(err) = flush_batch(
-                &entry.name,
-                &mut batch,
-                visitor.as_ref(),
-                &bucket_progress,
-                &mut attempts,
-                &mut timestamp,
-                &mut record_count,
-            )
-            .await
-            {
-                return EntryCopyOutcome {
-                    entry_name,
-                    result: Err(err),
-                };
-            }
+            flush_batch_or_return!(batch);
             if attempts == DOWNLOAD_ATTEMPTS {
                 break;
             }
@@ -631,6 +608,39 @@ mod tests {
     use rstest::*;
 
     use super::*;
+
+    mod progress {
+        use super::*;
+
+        #[test]
+        fn test_progress_uses_fixed_total_length() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress =
+                BucketProgress::new("test".to_string(), 1, 1, 100, &progress, false);
+
+            assert_eq!(bucket_progress.progress_bar.length(), Some(100));
+            assert_eq!(bucket_progress.progress_bar.position(), 0);
+
+            bucket_progress.update("entry-1", 10);
+            assert_eq!(bucket_progress.progress_bar.length(), Some(100));
+            assert_eq!(bucket_progress.progress_bar.position(), 1);
+
+            bucket_progress.update("entry-1", 10);
+            assert_eq!(bucket_progress.progress_bar.length(), Some(100));
+            assert_eq!(bucket_progress.progress_bar.position(), 2);
+        }
+
+        #[test]
+        fn test_done_sets_progress_to_complete() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress =
+                BucketProgress::new("test".to_string(), 1, 1, 10, &progress, false);
+            bucket_progress.update("entry-1", 10);
+            bucket_progress.done();
+
+            assert_eq!(bucket_progress.progress_bar.position(), 10);
+        }
+    }
 
     mod downloading {
         use super::*;
