@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add `attachment write` command for entry attachments.
+- Add `attachment write`, `attachment ls`, `attachment read`, and `attachment rm` commands for entry attachments.
 
 ## 0.10.2 - 2026-02-16
 
