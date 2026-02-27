@@ -1,4 +1,4 @@
-// Copyright 2023 ReductStore
+// Copyright 2023-2026 ReductStore
 // This Source Code Form is subject to the terms of the Mozilla Public
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
@@ -11,6 +11,7 @@ mod io;
 mod parse;
 
 use crate::cmd::alias::{alias_cmd, alias_handler};
+use crate::cmd::attachment::{attachment_cmd, attachment_handler};
 use crate::context::ContextBuilder;
 use std::time::Duration;
 
@@ -61,6 +62,7 @@ fn cli() -> Command {
                 .global(true),
         )
         .subcommand(alias_cmd())
+        .subcommand(attachment_cmd())
         .subcommand(server_cmd())
         .subcommand(bucket_cmd())
         .subcommand(token_cmd())
@@ -82,6 +84,7 @@ async fn main() -> anyhow::Result<()> {
 
     let result = match matches.subcommand() {
         Some(("alias", args)) => alias_handler(&ctx, args.subcommand()),
+        Some(("attachment", args)) => attachment_handler(&ctx, args.subcommand()).await,
         Some(("server", args)) => server_handler(&ctx, args.subcommand()).await,
         Some(("bucket", args)) => bucket_handler(&ctx, args.subcommand()).await,
         Some(("token", args)) => token_handler(&ctx, args.subcommand()).await,

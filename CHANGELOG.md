@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add `attachment write`, `attachment ls`, `attachment read`, and `attachment rm` commands for entry attachments, [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
+
+### Fixed
+
+- Fix `cp` progress estimation to use time windows with `--start/--stop` and use record-count mode when a limit is set via `--limit` or `--when` (`$limit`), [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
+
 ## 0.10.2 - 2026-02-16
 
 ### Added
