@@ -65,7 +65,7 @@ pub(crate) fn rm_cmd() -> Command {
 
 pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let (alias, bucket) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
-    let query_params = parse_query_params(ctx, &args)?;
+    let query_params = parse_query_params(ctx, &args, Some(alias.as_str()))?;
     let timestamps = args
         .get_many::<String>("time")
         .map(|values| values.map(|s| s.clone()).collect::<Vec<String>>());

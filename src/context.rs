@@ -8,12 +8,21 @@ use dirs::home_dir;
 use std::env::current_dir;
 use std::time::Duration;
 
+pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const DEFAULT_TIMEOUT_SECS: u64 = 30;
+pub(crate) const DEFAULT_PARALLEL: usize = 10;
+
 pub(crate) struct CliContext {
     config_path: String,
     output: Box<dyn Output>,
     ignore_ssl: bool,
+    ignore_ssl_overridden: bool,
     timeout: Duration,
+    timeout_overridden: bool,
     parallel: usize,
+    parallel_overridden: bool,
+    ca_cert: Option<String>,
+    ca_cert_overridden: bool,
 }
 
 impl CliContext {
@@ -28,12 +37,32 @@ impl CliContext {
         self.ignore_ssl
     }
 
+    pub(crate) fn ignore_ssl_overridden(&self) -> bool {
+        self.ignore_ssl_overridden
+    }
+
     pub(crate) fn timeout(&self) -> Duration {
         self.timeout
     }
 
+    pub(crate) fn timeout_overridden(&self) -> bool {
+        self.timeout_overridden
+    }
+
     pub(crate) fn parallel(&self) -> usize {
         self.parallel
+    }
+
+    pub(crate) fn parallel_overridden(&self) -> bool {
+        self.parallel_overridden
+    }
+
+    pub(crate) fn ca_cert(&self) -> Option<&String> {
+        self.ca_cert.as_ref()
+    }
+
+    pub(crate) fn ca_cert_overridden(&self) -> bool {
+        self.ca_cert_overridden
     }
 }
 
@@ -47,8 +76,13 @@ impl ContextBuilder {
             config_path: String::new(),
             output: Box::new(StdOutput::new()),
             ignore_ssl: false,
-            timeout: Duration::from_secs(30),
-            parallel: 10,
+            ignore_ssl_overridden: false,
+            timeout: DEFAULT_TIMEOUT,
+            timeout_overridden: false,
+            parallel: DEFAULT_PARALLEL,
+            parallel_overridden: false,
+            ca_cert: None,
+            ca_cert_overridden: false,
         };
         config.config_path = match home_dir() {
             Some(path) => path
@@ -82,13 +116,38 @@ impl ContextBuilder {
         self
     }
 
+    pub(crate) fn ignore_ssl_overridden(mut self, overridden: bool) -> Self {
+        self.config.ignore_ssl_overridden = overridden;
+        self
+    }
+
     pub(crate) fn timeout(mut self, timeout: Duration) -> Self {
         self.config.timeout = timeout;
         self
     }
 
+    pub(crate) fn timeout_overridden(mut self, overridden: bool) -> Self {
+        self.config.timeout_overridden = overridden;
+        self
+    }
+
     pub(crate) fn parallel(mut self, parallel: usize) -> Self {
         self.config.parallel = parallel;
+        self
+    }
+
+    pub(crate) fn parallel_overridden(mut self, overridden: bool) -> Self {
+        self.config.parallel_overridden = overridden;
+        self
+    }
+
+    pub(crate) fn ca_cert(mut self, ca_cert: Option<String>) -> Self {
+        self.config.ca_cert = ca_cert;
+        self
+    }
+
+    pub(crate) fn ca_cert_overridden(mut self, overridden: bool) -> Self {
+        self.config.ca_cert_overridden = overridden;
         self
     }
 
@@ -158,6 +217,10 @@ pub(crate) mod tests {
             Alias {
                 url: url::Url::parse("https://default.store").unwrap(),
                 token: "test_token".to_string(),
+                ignore_ssl: false,
+                timeout: DEFAULT_TIMEOUT_SECS,
+                parallel: DEFAULT_PARALLEL,
+                ca_cert: None,
             },
         );
         config.aliases.insert(
@@ -165,6 +228,10 @@ pub(crate) mod tests {
             Alias {
                 url: url::Url::parse("http://localhost:8383").unwrap(),
                 token: current_token,
+                ignore_ssl: false,
+                timeout: DEFAULT_TIMEOUT_SECS,
+                parallel: DEFAULT_PARALLEL,
+                ca_cert: None,
             },
         );
         config_file.save().unwrap();

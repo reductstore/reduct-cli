@@ -3,7 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::config::find_alias;
+use crate::config::{find_alias, resolve_connection_options};
 use crate::context::CliContext;
 use anyhow::anyhow;
 use reduct_rs::ReductClient;
@@ -14,16 +14,19 @@ pub(crate) async fn build_client(
     ctx: &CliContext,
     alias_or_url: &str,
 ) -> anyhow::Result<ReductClient> {
-    let (url, token) = match parse_url_and_token(ctx, alias_or_url) {
-        Ok(value) => value,
-        Err(err) => return Err(err),
-    };
+    let (url, token) = parse_url_and_token(ctx, alias_or_url)?;
+    let options = resolve_connection_options(ctx, alias_or_url);
+
+    if let Some(ca_cert) = &options.ca_cert {
+        // reqwest reads SSL_CERT_FILE from the process environment.
+        std::env::set_var("SSL_CERT_FILE", ca_cert);
+    }
 
     let client = ReductClient::builder()
         .url(url.as_str())
         .api_token(token.as_str())
-        .verify_ssl(!ctx.ignore_ssl())
-        .timeout(ctx.timeout())
+        .verify_ssl(!options.ignore_ssl)
+        .timeout(options.timeout)
         .try_build()?;
     Ok(client)
 }

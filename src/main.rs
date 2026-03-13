@@ -21,6 +21,7 @@ use crate::cmd::replica::{replication_cmd, replication_handler};
 use crate::cmd::rm::{rm_cmd, rm_handler};
 use crate::cmd::server::{server_cmd, server_handler};
 use crate::cmd::token::{token_cmd, token_handler};
+use clap::parser::ValueSource;
 use clap::ArgAction::SetTrue;
 use clap::{crate_description, crate_name, crate_version, value_parser, Arg, Command};
 use colored::Colorize;
@@ -37,6 +38,14 @@ fn cli() -> Command {
                 .help("Ignore SSL certificate verification")
                 .required(false)
                 .action(SetTrue)
+                .global(true),
+        )
+        .arg(
+            Arg::new("ca-cert")
+                .long("ca-cert")
+                .value_name("PATH")
+                .help("Path to a custom CA certificate bundle/file")
+                .required(false)
                 .global(true),
         )
         .arg(
@@ -74,12 +83,20 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let matches = cli().get_matches();
+    let ignore_ssl = matches.get_flag("ignore-ssl");
+    let timeout = *matches.get_one::<u64>("timeout").unwrap();
+    let parallel = *matches.get_one::<usize>("parallel").unwrap();
+    let ca_cert = matches.get_one::<String>("ca-cert").cloned();
+
     let ctx = ContextBuilder::new()
-        .ignore_ssl(matches.get_flag("ignore-ssl"))
-        .timeout(Duration::from_secs(
-            *matches.get_one::<u64>("timeout").unwrap(),
-        ))
-        .parallel(*matches.get_one::<usize>("parallel").unwrap())
+        .ignore_ssl(ignore_ssl)
+        .ignore_ssl_overridden(ignore_ssl)
+        .timeout(Duration::from_secs(timeout))
+        .timeout_overridden(matches.value_source("timeout") == Some(ValueSource::CommandLine))
+        .parallel(parallel)
+        .parallel_overridden(matches.value_source("parallel") == Some(ValueSource::CommandLine))
+        .ca_cert(ca_cert)
+        .ca_cert_overridden(matches.value_source("ca-cert") == Some(ValueSource::CommandLine))
         .build();
 
     let result = match matches.subcommand() {

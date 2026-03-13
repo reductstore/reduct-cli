@@ -3,6 +3,7 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::config::{resolve_connection_options, ConnectionOptions};
 use crate::context::CliContext;
 use chrono::DateTime;
 use clap::parser::MatchesError;
@@ -93,6 +94,7 @@ impl Default for QueryParams {
 pub(crate) fn parse_query_params(
     ctx: &CliContext,
     args: &ArgMatches,
+    alias_or_url: Option<&str>,
 ) -> anyhow::Result<QueryParams> {
     let start = parse_time(args.get_one::<String>("start"))?;
     let stop = parse_time(args.get_one::<String>("stop"))?;
@@ -147,6 +149,16 @@ pub(crate) fn parse_query_params(
         None => None,
     };
 
+    let options = alias_or_url.map_or_else(
+        || ConnectionOptions {
+            ignore_ssl: ctx.ignore_ssl(),
+            timeout: ctx.timeout(),
+            parallel: ctx.parallel(),
+            ca_cert: ctx.ca_cert().cloned(),
+        },
+        |endpoint| resolve_connection_options(ctx, endpoint),
+    );
+
     Ok(QueryParams {
         start,
         stop,
@@ -154,8 +166,8 @@ pub(crate) fn parse_query_params(
         each_s,
         limit,
         entry_filter: entries_filter,
-        parallel: ctx.parallel(),
-        ttl: ctx.timeout() * ctx.parallel() as u32,
+        parallel: options.parallel,
+        ttl: options.timeout * options.parallel as u32,
         when: json_when,
         strict: *strict,
         ext: ext_json,
@@ -168,6 +180,7 @@ mod test {
     use super::*;
     mod parse_query_params {
         use crate::cmd::cp::cp_cmd;
+        use crate::config::ConfigFile;
         use crate::context::tests::context;
         use rstest::rstest;
 
@@ -178,7 +191,7 @@ mod test {
             let args = cp_cmd()
                 .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2"])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.start, None);
             assert_eq!(query_params.stop, None);
@@ -197,7 +210,7 @@ mod test {
                     "200",
                 ])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.start, Some(100));
             assert_eq!(query_params.stop, Some(200));
@@ -216,7 +229,7 @@ mod test {
                     "2023-01-02T00:00:00Z",
                 ])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.start, Some(1672531200000000));
             assert_eq!(query_params.stop, Some(1672617600000000));
@@ -227,7 +240,7 @@ mod test {
             let args = cp_cmd()
                 .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-n", "10"])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.each_n, Some(10));
         }
@@ -237,7 +250,7 @@ mod test {
             let args = cp_cmd()
                 .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--each-s", "10"])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.each_s, Some(10.0));
         }
@@ -247,7 +260,7 @@ mod test {
             let args = cp_cmd()
                 .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--limit", "100"])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.limit, Some(100));
         }
@@ -264,7 +277,7 @@ mod test {
                     "entry-2",
                 ])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(
                 query_params.entry_filter,
@@ -283,7 +296,7 @@ mod test {
                     r#"{"$gt": 100}"#,
                 ])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.when, Some(serde_json::json!({"$gt": 100})));
         }
@@ -299,7 +312,7 @@ mod test {
                     r#"{"$gt": 100"#,
                 ])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args);
+            let query_params = parse_query_params(&context, &args, None);
 
             assert!(query_params
                 .err()
@@ -313,9 +326,26 @@ mod test {
             let args = cp_cmd()
                 .try_get_matches_from(vec!["cp", "serv/buck1", "serv/buck2", "--strict"])
                 .unwrap();
-            let query_params = parse_query_params(&context, &args).unwrap();
+            let query_params = parse_query_params(&context, &args, None).unwrap();
 
             assert_eq!(query_params.strict, true);
+        }
+
+        #[rstest]
+        fn parse_with_alias_defaults(context: CliContext) {
+            let mut config_file = ConfigFile::load(context.config_path()).unwrap();
+            let alias = config_file.mut_config().aliases.get_mut("default").unwrap();
+            alias.timeout = 12;
+            alias.parallel = 3;
+            config_file.save().unwrap();
+
+            let args = cp_cmd()
+                .try_get_matches_from(vec!["cp", "default/buck1", "default/buck2"])
+                .unwrap();
+            let query_params = parse_query_params(&context, &args, Some("default")).unwrap();
+
+            assert_eq!(query_params.parallel, 3);
+            assert_eq!(query_params.ttl, Duration::from_secs(36));
         }
     }
 }

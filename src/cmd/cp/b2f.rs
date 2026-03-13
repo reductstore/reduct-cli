@@ -189,7 +189,7 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
         }
     };
 
-    let query_params = parse_query_params(ctx, &args)?;
+    let query_params = parse_query_params(ctx, &args, Some(&src_instance))?;
     let src_bucket = build_client(ctx, &src_instance)
         .await?
         .get_bucket(&src_bucket)

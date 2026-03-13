@@ -25,6 +25,10 @@ pub(super) fn add_alias(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<(
         Alias {
             url: Url::parse(url)?,
             token: token.map(|t: &String| t.to_string()).unwrap_or_default(),
+            ignore_ssl: ctx.ignore_ssl(),
+            timeout: ctx.timeout().as_secs(),
+            parallel: ctx.parallel(),
+            ca_cert: ctx.ca_cert().cloned(),
         },
     );
     config_file.save()?;
@@ -55,7 +59,11 @@ pub(super) fn add_alias_cmd() -> Command {
 mod tests {
     use super::*;
     use crate::context::tests::context;
+    use crate::context::{ContextBuilder, DEFAULT_PARALLEL};
+    use crate::io::std::Output;
     use rstest::rstest;
+    use std::time::Duration;
+    use tempfile::tempdir;
 
     #[rstest]
     fn test_add_alias(context: CliContext) {
@@ -77,6 +85,10 @@ mod tests {
             Alias {
                 url: Url::parse("https://test.reduct.store").unwrap(),
                 token: "test_token".to_string(),
+                ignore_ssl: false,
+                timeout: 30,
+                parallel: 10,
+                ca_cert: None,
             }
         );
     }
@@ -123,5 +135,35 @@ mod tests {
             result.err().unwrap().to_string(),
             "Alias 'test' already exists"
         );
+    }
+
+    #[rstest]
+    fn test_add_alias_persists_connection_options() {
+        let tmp_dir = tempdir().unwrap();
+        let context = ContextBuilder::new()
+            .config_path(tmp_dir.path().join("config.toml").to_str().unwrap())
+            .output(Box::new(crate::context::tests::MockOutput::new()) as Box<dyn Output>)
+            .ignore_ssl(true)
+            .timeout(Duration::from_secs(15))
+            .parallel(DEFAULT_PARALLEL + 1)
+            .ca_cert(Some("/tmp/custom-ca.pem".to_string()))
+            .build();
+
+        let args = add_alias_cmd().get_matches_from(vec![
+            "add",
+            "test",
+            "-L",
+            "https://test.reduct.store",
+            "-t",
+            "test_token",
+        ]);
+        add_alias(&context, &args).unwrap();
+
+        let config_file = ConfigFile::load(context.config_path()).unwrap();
+        let alias = config_file.config().aliases.get("test").unwrap();
+        assert_eq!(alias.ignore_ssl, true);
+        assert_eq!(alias.timeout, 15);
+        assert_eq!(alias.parallel, DEFAULT_PARALLEL + 1);
+        assert_eq!(alias.ca_cert, Some("/tmp/custom-ca.pem".to_string()));
     }
 }
