@@ -82,7 +82,7 @@ pub(crate) async fn cp_bucket_to_bucket_with(
     dst_instance: &str,
     dst_bucket: &str,
 ) -> anyhow::Result<()> {
-    let query_params = parse_query_params(ctx, &args)?;
+    let query_params = parse_query_params(ctx, &args, Some(src_instance))?;
     let from_last = args.get_flag("from-last");
     if from_last && args.get_one::<String>("start").is_some() {
         return Err(anyhow::anyhow!("--from-last can't be used with --start"));

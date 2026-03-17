@@ -6,6 +6,7 @@ use crate::context::CliContext;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use std::path::PathBuf;
 use url::Url;
@@ -14,6 +15,22 @@ use url::Url;
 pub(crate) struct Alias {
     pub url: Url,
     pub token: String,
+    #[serde(default)]
+    pub ignore_ssl: bool,
+    #[serde(default = "default_timeout")]
+    pub timeout: u64,
+    #[serde(default = "default_parallel")]
+    pub parallel: usize,
+    #[serde(default)]
+    pub ca_cert: Option<String>,
+}
+
+fn default_timeout() -> u64 {
+    crate::context::DEFAULT_TIMEOUT_SECS
+}
+
+fn default_parallel() -> usize {
+    crate::context::DEFAULT_PARALLEL
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Debug)]
@@ -77,6 +94,44 @@ pub(crate) fn find_alias(ctx: &CliContext, alias: &str) -> anyhow::Result<Alias>
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ConnectionOptions {
+    pub ignore_ssl: bool,
+    pub timeout: Duration,
+    pub parallel: usize,
+    pub ca_cert: Option<String>,
+}
+
+pub(crate) fn resolve_connection_options(
+    ctx: &CliContext,
+    alias_or_url: &str,
+) -> ConnectionOptions {
+    let alias_options = find_alias(ctx, alias_or_url).ok();
+    ConnectionOptions {
+        ignore_ssl: ctx
+            .ignore_ssl()
+            .or_else(|| alias_options.as_ref().map(|alias| alias.ignore_ssl))
+            .unwrap_or(false),
+        timeout: ctx
+            .timeout()
+            .or_else(|| {
+                alias_options
+                    .as_ref()
+                    .map(|alias| Duration::from_secs(alias.timeout))
+            })
+            .unwrap_or(crate::context::DEFAULT_TIMEOUT),
+        parallel: ctx
+            .parallel()
+            .or_else(|| alias_options.as_ref().map(|alias| alias.parallel))
+            .unwrap_or(crate::context::DEFAULT_PARALLEL),
+        ca_cert: ctx.ca_cert().cloned().or_else(|| {
+            alias_options
+                .as_ref()
+                .and_then(|alias| alias.ca_cert.clone())
+        }),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,9 +139,10 @@ mod tests {
     use std::fs;
     use std::fs::File;
     use std::io::Write;
+    use std::time::Duration;
 
-    use crate::context::tests::context;
-    use crate::context::CliContext;
+    use crate::context::tests::{context, output};
+    use crate::context::{CliContext, ContextBuilder};
 
     #[rstest]
     fn test_load(context: CliContext) {
@@ -108,6 +164,9 @@ mod tests {
             "https://test.com/"
         );
         assert_eq!(config.aliases.get("test").unwrap().token, "test");
+        assert_eq!(config.aliases.get("test").unwrap().timeout, 30);
+        assert_eq!(config.aliases.get("test").unwrap().parallel, 10);
+        assert_eq!(config.aliases.get("test").unwrap().ca_cert, None);
     }
 
     #[rstest]
@@ -119,6 +178,10 @@ mod tests {
             Alias {
                 url: Url::parse("https://test.com").unwrap(),
                 token: "test".to_string(),
+                ignore_ssl: false,
+                timeout: 30,
+                parallel: 10,
+                ca_cert: None,
             },
         )]
         .into_iter()
@@ -137,5 +200,42 @@ mod tests {
     fn test_empty_config(context: CliContext) {
         let config_file = ConfigFile::load(&format!("{}.empty", context.config_path())).unwrap();
         assert_eq!(config_file.config().aliases.len(), 0);
+    }
+
+    #[rstest]
+    fn test_resolve_connection_options_from_alias(context: CliContext) {
+        let mut config_file = ConfigFile::load(context.config_path()).unwrap();
+        let alias = config_file.mut_config().aliases.get_mut("default").unwrap();
+        alias.ignore_ssl = true;
+        alias.timeout = 7;
+        alias.parallel = 2;
+        alias.ca_cert = Some("/tmp/test.crt".to_string());
+        config_file.save().unwrap();
+
+        let options = resolve_connection_options(&context, "default");
+        assert_eq!(options.ignore_ssl, true);
+        assert_eq!(options.timeout, Duration::from_secs(7));
+        assert_eq!(options.parallel, 2);
+        assert_eq!(options.ca_cert, Some("/tmp/test.crt".to_string()));
+    }
+
+    #[rstest]
+    fn test_resolve_connection_options_cli_override(
+        context: CliContext,
+        output: Box<dyn crate::io::std::Output>,
+    ) {
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .output(output)
+            .ignore_ssl(Some(false))
+            .timeout(Some(Duration::from_secs(5)))
+            .parallel(Some(4))
+            .ca_cert(Some("/tmp/override.crt".to_string()))
+            .build();
+
+        let options = resolve_connection_options(&ctx, "default");
+        assert_eq!(options.timeout, Duration::from_secs(5));
+        assert_eq!(options.parallel, 4);
+        assert_eq!(options.ca_cert, Some("/tmp/override.crt".to_string()));
     }
 }

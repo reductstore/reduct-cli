@@ -40,13 +40,20 @@ fn cli() -> Command {
                 .global(true),
         )
         .arg(
+            Arg::new("ca-cert")
+                .long("ca-cert")
+                .value_name("PATH")
+                .help("Path to a custom CA certificate bundle/file")
+                .required(false)
+                .global(true),
+        )
+        .arg(
             Arg::new("timeout")
                 .long("timeout")
                 .short('T')
                 .value_name("SECONDS")
                 .help("Timeout for requests")
                 .value_parser(value_parser!(u64))
-                .default_value("30")
                 .required(false)
                 .global(true),
         )
@@ -57,7 +64,6 @@ fn cli() -> Command {
                 .value_name("COUNT")
                 .help("Number of parallel requests")
                 .value_parser(value_parser!(usize))
-                .default_value("10")
                 .required(false)
                 .global(true),
         )
@@ -74,12 +80,16 @@ fn cli() -> Command {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let matches = cli().get_matches();
+    let ignore_ssl = matches.get_flag("ignore-ssl").then_some(true);
+    let timeout = matches.get_one::<u64>("timeout").copied();
+    let parallel = matches.get_one::<usize>("parallel").copied();
+    let ca_cert = matches.get_one::<String>("ca-cert").cloned();
+
     let ctx = ContextBuilder::new()
-        .ignore_ssl(matches.get_flag("ignore-ssl"))
-        .timeout(Duration::from_secs(
-            *matches.get_one::<u64>("timeout").unwrap(),
-        ))
-        .parallel(*matches.get_one::<usize>("parallel").unwrap())
+        .ignore_ssl(ignore_ssl)
+        .timeout(timeout.map(Duration::from_secs))
+        .parallel(parallel)
+        .ca_cert(ca_cert)
         .build();
 
     let result = match matches.subcommand() {

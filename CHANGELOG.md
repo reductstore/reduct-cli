@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add `attachment write`, `attachment ls`, `attachment read`, and `attachment rm` commands for entry attachments, [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
+- Add global `--ca-cert` and persist alias connection options (`--ca-cert`, `--ignore-ssl`, `--timeout`, `--parallel`) in `alias add`, [PR-189](https://github.com/reductstore/reduct-cli/pull/189)
 
 ### Fixed
 
