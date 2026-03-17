@@ -151,9 +151,9 @@ pub(crate) fn parse_query_params(
 
     let options = alias_or_url.map_or_else(
         || ConnectionOptions {
-            ignore_ssl: ctx.ignore_ssl(),
-            timeout: ctx.timeout(),
-            parallel: ctx.parallel(),
+            ignore_ssl: ctx.ignore_ssl().unwrap_or(false),
+            timeout: ctx.timeout().unwrap_or(crate::context::DEFAULT_TIMEOUT),
+            parallel: ctx.parallel().unwrap_or(crate::context::DEFAULT_PARALLEL),
             ca_cert: ctx.ca_cert().cloned(),
         },
         |endpoint| resolve_connection_options(ctx, endpoint),

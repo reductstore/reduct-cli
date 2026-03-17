@@ -17,17 +17,17 @@ pub(crate) async fn build_client(
     let (url, token) = parse_url_and_token(ctx, alias_or_url)?;
     let options = resolve_connection_options(ctx, alias_or_url);
 
-    if let Some(ca_cert) = &options.ca_cert {
-        // reqwest reads SSL_CERT_FILE from the process environment.
-        std::env::set_var("SSL_CERT_FILE", ca_cert);
-    }
-
-    let client = ReductClient::builder()
+    let mut client = ReductClient::builder()
         .url(url.as_str())
         .api_token(token.as_str())
         .verify_ssl(!options.ignore_ssl)
-        .timeout(options.timeout)
-        .try_build()?;
+        .timeout(options.timeout);
+
+    if let Some(ca_cert) = &options.ca_cert {
+        client = client.ca_cert_path(ca_cert);
+    }
+
+    let client = client.try_build()?;
     Ok(client)
 }
 

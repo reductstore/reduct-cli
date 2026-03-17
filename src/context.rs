@@ -15,14 +15,10 @@ pub(crate) const DEFAULT_PARALLEL: usize = 10;
 pub(crate) struct CliContext {
     config_path: String,
     output: Box<dyn Output>,
-    ignore_ssl: bool,
-    ignore_ssl_overridden: bool,
-    timeout: Duration,
-    timeout_overridden: bool,
-    parallel: usize,
-    parallel_overridden: bool,
+    ignore_ssl: Option<bool>,
+    timeout: Option<Duration>,
+    parallel: Option<usize>,
     ca_cert: Option<String>,
-    ca_cert_overridden: bool,
 }
 
 impl CliContext {
@@ -33,36 +29,20 @@ impl CliContext {
         &*self.output
     }
 
-    pub(crate) fn ignore_ssl(&self) -> bool {
+    pub(crate) fn ignore_ssl(&self) -> Option<bool> {
         self.ignore_ssl
     }
 
-    pub(crate) fn ignore_ssl_overridden(&self) -> bool {
-        self.ignore_ssl_overridden
-    }
-
-    pub(crate) fn timeout(&self) -> Duration {
+    pub(crate) fn timeout(&self) -> Option<Duration> {
         self.timeout
     }
 
-    pub(crate) fn timeout_overridden(&self) -> bool {
-        self.timeout_overridden
-    }
-
-    pub(crate) fn parallel(&self) -> usize {
+    pub(crate) fn parallel(&self) -> Option<usize> {
         self.parallel
-    }
-
-    pub(crate) fn parallel_overridden(&self) -> bool {
-        self.parallel_overridden
     }
 
     pub(crate) fn ca_cert(&self) -> Option<&String> {
         self.ca_cert.as_ref()
-    }
-
-    pub(crate) fn ca_cert_overridden(&self) -> bool {
-        self.ca_cert_overridden
     }
 }
 
@@ -75,14 +55,10 @@ impl ContextBuilder {
         let mut config = CliContext {
             config_path: String::new(),
             output: Box::new(StdOutput::new()),
-            ignore_ssl: false,
-            ignore_ssl_overridden: false,
-            timeout: DEFAULT_TIMEOUT,
-            timeout_overridden: false,
-            parallel: DEFAULT_PARALLEL,
-            parallel_overridden: false,
+            ignore_ssl: None,
+            timeout: None,
+            parallel: None,
             ca_cert: None,
-            ca_cert_overridden: false,
         };
         config.config_path = match home_dir() {
             Some(path) => path
@@ -111,43 +87,23 @@ impl ContextBuilder {
         self
     }
 
-    pub(crate) fn ignore_ssl(mut self, ignore_ssl: bool) -> Self {
+    pub(crate) fn ignore_ssl(mut self, ignore_ssl: Option<bool>) -> Self {
         self.config.ignore_ssl = ignore_ssl;
         self
     }
 
-    pub(crate) fn ignore_ssl_overridden(mut self, overridden: bool) -> Self {
-        self.config.ignore_ssl_overridden = overridden;
-        self
-    }
-
-    pub(crate) fn timeout(mut self, timeout: Duration) -> Self {
+    pub(crate) fn timeout(mut self, timeout: Option<Duration>) -> Self {
         self.config.timeout = timeout;
         self
     }
 
-    pub(crate) fn timeout_overridden(mut self, overridden: bool) -> Self {
-        self.config.timeout_overridden = overridden;
-        self
-    }
-
-    pub(crate) fn parallel(mut self, parallel: usize) -> Self {
+    pub(crate) fn parallel(mut self, parallel: Option<usize>) -> Self {
         self.config.parallel = parallel;
-        self
-    }
-
-    pub(crate) fn parallel_overridden(mut self, overridden: bool) -> Self {
-        self.config.parallel_overridden = overridden;
         self
     }
 
     pub(crate) fn ca_cert(mut self, ca_cert: Option<String>) -> Self {
         self.config.ca_cert = ca_cert;
-        self
-    }
-
-    pub(crate) fn ca_cert_overridden(mut self, overridden: bool) -> Self {
-        self.config.ca_cert_overridden = overridden;
         self
     }
 

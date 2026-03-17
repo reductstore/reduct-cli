@@ -108,38 +108,27 @@ pub(crate) fn resolve_connection_options(
 ) -> ConnectionOptions {
     let alias_options = find_alias(ctx, alias_or_url).ok();
     ConnectionOptions {
-        ignore_ssl: if ctx.ignore_ssl_overridden() {
-            ctx.ignore_ssl()
-        } else {
-            alias_options
-                .as_ref()
-                .map(|alias| alias.ignore_ssl)
-                .unwrap_or(ctx.ignore_ssl())
-        },
-        timeout: if ctx.timeout_overridden() {
-            ctx.timeout()
-        } else {
-            alias_options
-                .as_ref()
-                .map(|alias| Duration::from_secs(alias.timeout))
-                .unwrap_or(ctx.timeout())
-        },
-        parallel: if ctx.parallel_overridden() {
-            ctx.parallel()
-        } else {
-            alias_options
-                .as_ref()
-                .map(|alias| alias.parallel)
-                .unwrap_or(ctx.parallel())
-        },
-        ca_cert: if ctx.ca_cert_overridden() {
-            ctx.ca_cert().cloned()
-        } else {
+        ignore_ssl: ctx
+            .ignore_ssl()
+            .or_else(|| alias_options.as_ref().map(|alias| alias.ignore_ssl))
+            .unwrap_or(false),
+        timeout: ctx
+            .timeout()
+            .or_else(|| {
+                alias_options
+                    .as_ref()
+                    .map(|alias| Duration::from_secs(alias.timeout))
+            })
+            .unwrap_or(crate::context::DEFAULT_TIMEOUT),
+        parallel: ctx
+            .parallel()
+            .or_else(|| alias_options.as_ref().map(|alias| alias.parallel))
+            .unwrap_or(crate::context::DEFAULT_PARALLEL),
+        ca_cert: ctx.ca_cert().cloned().or_else(|| {
             alias_options
                 .as_ref()
                 .and_then(|alias| alias.ca_cert.clone())
-                .or_else(|| ctx.ca_cert().cloned())
-        },
+        }),
     }
 }
 
@@ -238,14 +227,10 @@ mod tests {
         let ctx = ContextBuilder::new()
             .config_path(context.config_path())
             .output(output)
-            .ignore_ssl(false)
-            .ignore_ssl_overridden(false)
-            .timeout(Duration::from_secs(5))
-            .timeout_overridden(true)
-            .parallel(4)
-            .parallel_overridden(true)
+            .ignore_ssl(Some(false))
+            .timeout(Some(Duration::from_secs(5)))
+            .parallel(Some(4))
             .ca_cert(Some("/tmp/override.crt".to_string()))
-            .ca_cert_overridden(true)
             .build();
 
         let options = resolve_connection_options(&ctx, "default");

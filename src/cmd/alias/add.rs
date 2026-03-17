@@ -4,7 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::config::{Alias, ConfigFile};
-use crate::context::CliContext;
+use crate::context::{CliContext, DEFAULT_PARALLEL, DEFAULT_TIMEOUT_SECS};
 use anyhow::Error;
 use clap::{arg, Arg, ArgMatches, Command};
 use url::Url;
@@ -25,9 +25,12 @@ pub(super) fn add_alias(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<(
         Alias {
             url: Url::parse(url)?,
             token: token.map(|t: &String| t.to_string()).unwrap_or_default(),
-            ignore_ssl: ctx.ignore_ssl(),
-            timeout: ctx.timeout().as_secs(),
-            parallel: ctx.parallel(),
+            ignore_ssl: ctx.ignore_ssl().unwrap_or(false),
+            timeout: ctx
+                .timeout()
+                .map(|timeout| timeout.as_secs())
+                .unwrap_or(DEFAULT_TIMEOUT_SECS),
+            parallel: ctx.parallel().unwrap_or(DEFAULT_PARALLEL),
             ca_cert: ctx.ca_cert().cloned(),
         },
     );
@@ -59,7 +62,7 @@ pub(super) fn add_alias_cmd() -> Command {
 mod tests {
     use super::*;
     use crate::context::tests::context;
-    use crate::context::{ContextBuilder, DEFAULT_PARALLEL};
+    use crate::context::ContextBuilder;
     use crate::io::std::Output;
     use rstest::rstest;
     use std::time::Duration;
@@ -143,9 +146,9 @@ mod tests {
         let context = ContextBuilder::new()
             .config_path(tmp_dir.path().join("config.toml").to_str().unwrap())
             .output(Box::new(crate::context::tests::MockOutput::new()) as Box<dyn Output>)
-            .ignore_ssl(true)
-            .timeout(Duration::from_secs(15))
-            .parallel(DEFAULT_PARALLEL + 1)
+            .ignore_ssl(Some(true))
+            .timeout(Some(Duration::from_secs(15)))
+            .parallel(Some(DEFAULT_PARALLEL + 1))
             .ca_cert(Some("/tmp/custom-ca.pem".to_string()))
             .build();
 
