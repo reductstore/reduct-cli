@@ -121,9 +121,9 @@ pub(crate) async fn cp_bucket_to_bucket_with(
     ctx: &CliContext,
     args: &ArgMatches,
     src_instance: &str,
-    src_bucket: &str,
+    src_bucket_name: &str,
     dst_instance: &str,
-    dst_bucket: &str,
+    dst_bucket_name: &str,
 ) -> anyhow::Result<()> {
     let query_params = parse_query_params(ctx, &args, Some(src_instance))?;
     let from_last = args.get_flag("from-last");
@@ -133,17 +133,17 @@ pub(crate) async fn cp_bucket_to_bucket_with(
 
     let src_bucket = build_client(ctx, src_instance)
         .await?
-        .get_bucket(src_bucket)
+        .get_bucket(src_bucket_name)
         .await?;
 
     let dst_client = build_client(ctx, dst_instance).await?;
-    let dst_bucket = match dst_client.get_bucket(dst_bucket).await {
+    let dst_bucket = match dst_client.get_bucket(dst_bucket_name).await {
         Ok(bucket) => bucket,
         Err(err) => {
             if err.status() == ErrorCode::NotFound {
                 // Create the bucket if it does not exist with the same settings as the source bucket
                 dst_client
-                    .create_bucket(dst_bucket)
+                    .create_bucket(dst_bucket_name)
                     .settings(src_bucket.settings().await?)
                     .send()
                     .await?
@@ -153,8 +153,19 @@ pub(crate) async fn cp_bucket_to_bucket_with(
         }
     };
 
-    let src_bucket_visitor = Arc::new(src_bucket.clone());
-    let dst_bucket_visitor_ref = Arc::new(dst_bucket.clone());
+    // Bucket handles are not Clone, so obtain dedicated handles for the visitor.
+    let src_bucket_visitor = Arc::new(
+        build_client(ctx, src_instance)
+            .await?
+            .get_bucket(src_bucket_name)
+            .await?,
+    );
+    let dst_bucket_visitor_ref = Arc::new(
+        build_client(ctx, dst_instance)
+            .await?
+            .get_bucket(dst_bucket.name())
+            .await?,
+    );
 
     let dst_bucket_visitor = CopyToBucketVisitor {
         src_bucket: Arc::clone(&src_bucket_visitor),
@@ -396,6 +407,59 @@ mod tests {
             assert_eq!(
                 attachments.get("schema"),
                 Some(&serde_json::json!({"type":"object"}))
+            );
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_cp_bucket_to_bucket_copies_attachments_for_batch(
+            context: CliContext,
+            #[future] bucket: String,
+            #[future] bucket2: String,
+        ) {
+            let client = build_client(&context, "local").await.unwrap();
+            let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+            let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
+
+            src_bucket
+                .write_record("test")
+                .timestamp_us(123456)
+                .data(Bytes::from_static(b"test-1"))
+                .send()
+                .await
+                .unwrap();
+            src_bucket
+                .write_record("test")
+                .timestamp_us(123457)
+                .data(Bytes::from_static(b"test-2"))
+                .send()
+                .await
+                .unwrap();
+            src_bucket
+                .write_attachments(
+                    "test",
+                    HashMap::from([(
+                        "schema".to_string(),
+                        serde_json::json!({"type":"object","version":1}),
+                    )]),
+                )
+                .await
+                .unwrap();
+
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    format!("local/{}", src_bucket.name()).as_str(),
+                    format!("local/{}", dst_bucket.name()).as_str(),
+                ])
+                .unwrap();
+
+            cp_bucket_to_bucket(&context, &args).await.unwrap();
+
+            let attachments = dst_bucket.read_attachments("test").await.unwrap();
+            assert_eq!(
+                attachments.get("schema"),
+                Some(&serde_json::json!({"type":"object","version":1}))
             );
         }
 
