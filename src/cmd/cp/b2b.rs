@@ -10,11 +10,43 @@ use crate::io::reduct::build_client;
 use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
-use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use serde_json::Value;
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 
 struct CopyToBucketVisitor {
+    src_bucket: Arc<Bucket>,
     dst_bucket: Arc<Bucket>,
+    attachments_copied: Arc<Mutex<HashSet<String>>>,
+}
+
+impl CopyToBucketVisitor {
+    async fn copy_attachments_once(&self, entry_name: &str) -> Result<(), ReductError> {
+        {
+            let copied_entries = self.attachments_copied.lock().unwrap();
+            if copied_entries.contains(entry_name) {
+                return Ok(());
+            }
+        }
+
+        let attachments = match self.src_bucket.read_attachments(entry_name).await {
+            Ok(attachments) => attachments,
+            Err(err) if err.status() == ErrorCode::NotFound => HashMap::<String, Value>::new(),
+            Err(err) => return Err(err),
+        };
+
+        if !attachments.is_empty() {
+            self.dst_bucket
+                .write_attachments(entry_name, attachments)
+                .await?;
+        }
+
+        self.attachments_copied
+            .lock()
+            .unwrap()
+            .insert(entry_name.to_string());
+        Ok(())
+    }
 }
 
 #[async_trait::async_trait]
@@ -43,6 +75,11 @@ impl CopyVisitor for CopyToBucketVisitor {
                     result.insert(timestamp, err);
                 }
             }
+
+            if result.is_empty() {
+                self.copy_attachments_once(entry_name).await?;
+            }
+
             Ok(result)
         } else {
             let errors = self
@@ -51,10 +88,16 @@ impl CopyVisitor for CopyToBucketVisitor {
                 .add_records(records)
                 .send()
                 .await?;
-            Ok(errors
+            let errors: BTreeMap<u64, ReductError> = errors
                 .into_iter()
                 .filter(|(_, err)| err.status() != ErrorCode::Conflict)
-                .collect())
+                .collect();
+
+            if errors.is_empty() {
+                self.copy_attachments_once(entry_name).await?;
+            }
+
+            Ok(errors)
         }
     }
 }
@@ -110,8 +153,13 @@ pub(crate) async fn cp_bucket_to_bucket_with(
         }
     };
 
+    let src_bucket_visitor = Arc::new(src_bucket.clone());
+    let dst_bucket_visitor_ref = Arc::new(dst_bucket.clone());
+
     let dst_bucket_visitor = CopyToBucketVisitor {
-        dst_bucket: Arc::new(dst_bucket),
+        src_bucket: Arc::clone(&src_bucket_visitor),
+        dst_bucket: Arc::clone(&dst_bucket_visitor_ref),
+        attachments_copied: Arc::new(Mutex::new(HashSet::new())),
     };
 
     let entry_start_overrides = if from_last {
@@ -172,16 +220,27 @@ mod tests {
         #[tokio::test]
         async fn test_visit(context: CliContext, #[future] bucket: String, records: Vec<Record>) {
             let client = build_client(&context, "local").await.unwrap();
+            let dst_bucket_name = bucket.await;
+            let src_bucket_name = format!("{}-src", dst_bucket_name);
             let dst_bucket = client
-                .create_bucket(&bucket.await)
+                .create_bucket(&dst_bucket_name)
+                .exist_ok(true)
+                .send()
+                .await
+                .unwrap();
+            let src_bucket = client
+                .create_bucket(&src_bucket_name)
                 .exist_ok(true)
                 .send()
                 .await
                 .unwrap();
 
             let dst_bucket = Arc::new(dst_bucket);
+            let src_bucket = Arc::new(src_bucket);
             let visitor = CopyToBucketVisitor {
+                src_bucket: Arc::clone(&src_bucket),
                 dst_bucket: Arc::clone(&dst_bucket),
+                attachments_copied: Arc::new(Mutex::new(HashSet::new())),
             };
 
             // should write the record to the destination bucket
@@ -206,16 +265,27 @@ mod tests {
             batch_records: Vec<Record>,
         ) {
             let client = build_client(&context, "local").await.unwrap();
+            let dst_bucket_name = bucket.await;
+            let src_bucket_name = format!("{}-src", dst_bucket_name);
             let dst_bucket = client
-                .create_bucket(&bucket.await)
+                .create_bucket(&dst_bucket_name)
+                .exist_ok(true)
+                .send()
+                .await
+                .unwrap();
+            let src_bucket = client
+                .create_bucket(&src_bucket_name)
                 .exist_ok(true)
                 .send()
                 .await
                 .unwrap();
 
             let dst_bucket = Arc::new(dst_bucket);
+            let src_bucket = Arc::new(src_bucket);
             let visitor = CopyToBucketVisitor {
+                src_bucket: Arc::clone(&src_bucket),
                 dst_bucket: Arc::clone(&dst_bucket),
+                attachments_copied: Arc::new(Mutex::new(HashSet::new())),
             };
 
             // should write the record to the destination bucket
@@ -286,6 +356,49 @@ mod tests {
                 .unwrap();
             assert_eq!(record.bytes().await.unwrap(), test_data);
         }
+        #[rstest]
+        #[tokio::test]
+        async fn test_cp_bucket_to_bucket_copies_attachments(
+            context: CliContext,
+            #[future] bucket: String,
+            #[future] bucket2: String,
+        ) {
+            let client = build_client(&context, "local").await.unwrap();
+            let src_bucket = client.create_bucket(&bucket.await).send().await.unwrap();
+            let dst_bucket = client.create_bucket(&bucket2.await).send().await.unwrap();
+
+            src_bucket
+                .write_record("test")
+                .timestamp_us(123456)
+                .data(Bytes::from_static(b"test"))
+                .send()
+                .await
+                .unwrap();
+            src_bucket
+                .write_attachments(
+                    "test",
+                    HashMap::from([("schema".to_string(), serde_json::json!({"type":"object"}))]),
+                )
+                .await
+                .unwrap();
+
+            let args = cp_cmd()
+                .try_get_matches_from(vec![
+                    "cp",
+                    format!("local/{}", src_bucket.name()).as_str(),
+                    format!("local/{}", dst_bucket.name()).as_str(),
+                ])
+                .unwrap();
+
+            cp_bucket_to_bucket(&context, &args).await.unwrap();
+
+            let attachments = dst_bucket.read_attachments("test").await.unwrap();
+            assert_eq!(
+                attachments.get("schema"),
+                Some(&serde_json::json!({"type":"object"}))
+            );
+        }
+
         #[rstest]
         #[tokio::test]
         async fn test_cp_bucket_to_bucket_more_than_80_records(
