@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Copy entry attachments during bucket-to-bucket `cp` transfers so metadata is preserved, [PR-196](https://github.com/reductstore/reduct-cli/pull/196)
 - Fix `cp` progress estimation to use time windows with `--start/--stop` and use record-count mode when a limit is set via `--limit` or `--when` (`$limit`), [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
-- Return a validation error instead of panicking when `cp --ext json` is used with ROS extraction ext params (`--ext-params '{"ros":{"extract":{}}}'`), [PR-198](https://github.com/reductstore/reduct-cli/pull/198)
+- Prevent `cp` panics when `--ext-params` includes computed labels (for example ROS extract params) by forcing the v2 batched query path, [PR-198](https://github.com/reductstore/reduct-cli/pull/198)
 
 ## 0.10.2 - 2026-02-16
 
