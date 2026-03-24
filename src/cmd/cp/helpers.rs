@@ -4,7 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use crate::parse::{fetch_and_filter_entries, QueryParams};
@@ -13,6 +13,7 @@ use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reduct_rs::{condition, Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
 use serde_json::Value;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, Instant};
 
@@ -304,10 +305,6 @@ pub(super) trait CopyVisitor {
         records: Vec<Record>,
     ) -> Result<BTreeMap<u64, ReductError>, ReductError>;
 
-    fn supports_attachments(&self) -> bool {
-        false
-    }
-
     async fn copy_attachments(
         &self,
         _entry_name: &str,
@@ -358,7 +355,7 @@ where
 
     let dst_bucket = Arc::new(dst_bucket_v);
     let src_bucket = Arc::new(src_bucket);
-    let copied_attachments = Arc::new(Mutex::new(HashSet::new()));
+    let copied_attachments = Arc::new(AsyncMutex::new(HashSet::new()));
     let entry_start_overrides = entry_start_overrides.map(Arc::new);
 
     let display_limit = query_params.parallel.max(1);
@@ -369,7 +366,7 @@ where
         &query_params,
         entry_start_overrides.as_ref().map(|v| v.as_ref()),
     );
-    let bucket_progress = Arc::new(Mutex::new(BucketProgress::new(
+    let bucket_progress = Arc::new(StdMutex::new(BucketProgress::new(
         bucket_name,
         display_limit,
         entries.len(),
@@ -546,8 +543,8 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
     visitor: Arc<V>,
     semaphore: Arc<tokio::sync::Semaphore>,
     mut params: QueryParams,
-    bucket_progress: Arc<Mutex<BucketProgress>>,
-    copied_attachments: Arc<Mutex<HashSet<String>>>,
+    bucket_progress: Arc<StdMutex<BucketProgress>>,
+    copied_attachments: Arc<AsyncMutex<HashSet<String>>>,
 ) -> EntryCopyOutcome {
     // Copy one entry with retry logic and bounded batching to control memory usage.
     let mut timestamp = params.start.unwrap_or(entry.oldest_record);
@@ -577,20 +574,18 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
     }
 
     while attempts > 0 {
-        if visitor.supports_attachments() {
-            if let Err(err) = copy_entry_attachments_once(
-                &entry.name,
-                bucket.as_ref(),
-                visitor.as_ref(),
-                copied_attachments.as_ref(),
-            )
-            .await
-            {
-                return EntryCopyOutcome {
-                    entry_name,
-                    result: Err(err),
-                };
-            }
+        if let Err(err) = copy_entry_attachments_once(
+            &entry.name,
+            bucket.as_ref(),
+            visitor.as_ref(),
+            copied_attachments.as_ref(),
+        )
+        .await
+        {
+            return EntryCopyOutcome {
+                entry_name,
+                result: Err(err),
+            };
         }
 
         let query_builder = build_query(&bucket, &entry, &params);
@@ -695,10 +690,10 @@ async fn copy_entry_attachments_once<V: CopyVisitor + Sync + ?Sized>(
     entry_name: &str,
     src_bucket: &Bucket,
     visitor: &V,
-    copied_attachments: &Mutex<HashSet<String>>,
+    copied_attachments: &AsyncMutex<HashSet<String>>,
 ) -> Result<(), ReductError> {
     {
-        let copied = copied_attachments.lock().unwrap();
+        let copied = copied_attachments.lock().await;
         if copied.contains(entry_name) {
             return Ok(());
         }
@@ -714,7 +709,7 @@ async fn copy_entry_attachments_once<V: CopyVisitor + Sync + ?Sized>(
 
     copied_attachments
         .lock()
-        .unwrap()
+        .await
         .insert(entry_name.to_string());
 
     Ok(())
@@ -724,7 +719,7 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
     entry_name: &str,
     batch: &mut Vec<Record>,
     visitor: &V,
-    bucket_progress: &Arc<Mutex<BucketProgress>>,
+    bucket_progress: &Arc<StdMutex<BucketProgress>>,
     attempts: &mut u8,
     timestamp: &mut u64,
     record_count: &mut u64,
@@ -761,7 +756,7 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
 // we also need to adjust the limit if we have one
 async fn make_attempt(
     attempts: &mut u8,
-    bucket_progress: &Arc<Mutex<BucketProgress>>,
+    bucket_progress: &Arc<StdMutex<BucketProgress>>,
     params: &mut QueryParams,
     record_count: u64,
     timestamp: u64,

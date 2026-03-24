@@ -62,10 +62,6 @@ impl CopyVisitor for CopyToBucketVisitor {
         }
     }
 
-    fn supports_attachments(&self) -> bool {
-        true
-    }
-
     async fn copy_attachments(
         &self,
         entry_name: &str,
