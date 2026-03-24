@@ -36,7 +36,7 @@ struct Meta {
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToFolderVisitor {
-    async fn visit(
+    async fn copy_records(
         &self,
         entry_name: &str,
         records: Vec<Record>,
@@ -46,7 +46,7 @@ impl CopyVisitor for CopyToFolderVisitor {
         if records.len() == 1 {
             let record = records.into_iter().next().unwrap();
             let timestamp = record.timestamp_us();
-            let res = self.visit_one_record(&entry_name, record).await;
+            let res = self.visit_one_record(entry_name, record).await;
             if let Err(err) = res {
                 result.insert(timestamp, err);
             }
@@ -227,7 +227,7 @@ mod tests {
             entry_name: String,
             records: Vec<Record>,
         ) {
-            let result = visitor.visit(&entry_name, records).await;
+            let result = visitor.copy_records(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -247,7 +247,7 @@ mod tests {
             entry_name: String,
             batch_records: Vec<Record>,
         ) {
-            let result = visitor.visit(&entry_name, batch_records).await;
+            let result = visitor.copy_records(&entry_name, batch_records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(&visitor.dst_folder)
@@ -277,7 +277,7 @@ mod tests {
             records: Vec<Record>,
         ) {
             visitor.ext = Some("md".to_string());
-            let result = visitor.visit(&entry_name, records).await;
+            let result = visitor.copy_records(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder)
@@ -294,7 +294,7 @@ mod tests {
             records: Vec<Record>,
         ) {
             visitor.with_meta = true;
-            let result = visitor.visit(&entry_name, records).await;
+            let result = visitor.copy_records(&entry_name, records).await;
             assert!(result.is_ok());
 
             let file_path = PathBuf::from(visitor.dst_folder.clone())
