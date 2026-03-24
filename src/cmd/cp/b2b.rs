@@ -11,47 +11,16 @@ use crate::parse::parse_query_params;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 struct CopyToBucketVisitor {
-    src_bucket: Arc<Bucket>,
     dst_bucket: Arc<Bucket>,
-    attachments_copied: Arc<Mutex<HashSet<String>>>,
-}
-
-impl CopyToBucketVisitor {
-    async fn copy_attachments_once(&self, entry_name: &str) -> Result<(), ReductError> {
-        {
-            let copied_entries = self.attachments_copied.lock().unwrap();
-            if copied_entries.contains(entry_name) {
-                return Ok(());
-            }
-        }
-
-        let attachments = match self.src_bucket.read_attachments(entry_name).await {
-            Ok(attachments) => attachments,
-            Err(err) if err.status() == ErrorCode::NotFound => HashMap::<String, Value>::new(),
-            Err(err) => return Err(err),
-        };
-
-        if !attachments.is_empty() {
-            self.dst_bucket
-                .write_attachments(entry_name, attachments)
-                .await?;
-        }
-
-        self.attachments_copied
-            .lock()
-            .unwrap()
-            .insert(entry_name.to_string());
-        Ok(())
-    }
 }
 
 #[async_trait::async_trait]
 impl CopyVisitor for CopyToBucketVisitor {
-    async fn visit(
+    async fn copy_records(
         &self,
         entry_name: &str,
         mut records: Vec<Record>,
@@ -76,10 +45,6 @@ impl CopyVisitor for CopyToBucketVisitor {
                 }
             }
 
-            if result.is_empty() {
-                self.copy_attachments_once(entry_name).await?;
-            }
-
             Ok(result)
         } else {
             let errors = self
@@ -93,12 +58,26 @@ impl CopyVisitor for CopyToBucketVisitor {
                 .filter(|(_, err)| err.status() != ErrorCode::Conflict)
                 .collect();
 
-            if errors.is_empty() {
-                self.copy_attachments_once(entry_name).await?;
-            }
-
             Ok(errors)
         }
+    }
+
+    fn supports_attachments(&self) -> bool {
+        true
+    }
+
+    async fn copy_attachments(
+        &self,
+        entry_name: &str,
+        attachments: HashMap<String, Value>,
+    ) -> Result<(), ReductError> {
+        if attachments.is_empty() {
+            return Ok(());
+        }
+
+        self.dst_bucket
+            .write_attachments(entry_name, attachments)
+            .await
     }
 }
 
@@ -153,30 +132,14 @@ pub(crate) async fn cp_bucket_to_bucket_with(
         }
     };
 
-    // Bucket handles are not Clone, so obtain dedicated handles for the visitor.
-    let src_bucket_visitor = Arc::new(
-        build_client(ctx, src_instance)
-            .await?
-            .get_bucket(src_bucket_name)
-            .await?,
-    );
-    let dst_bucket_visitor_ref = Arc::new(
-        build_client(ctx, dst_instance)
-            .await?
-            .get_bucket(dst_bucket.name())
-            .await?,
-    );
-
-    let dst_bucket_visitor = CopyToBucketVisitor {
-        src_bucket: Arc::clone(&src_bucket_visitor),
-        dst_bucket: Arc::clone(&dst_bucket_visitor_ref),
-        attachments_copied: Arc::new(Mutex::new(HashSet::new())),
-    };
-
     let entry_start_overrides = if from_last {
-        Some(build_entry_start_overrides(dst_bucket_visitor.dst_bucket.as_ref()).await?)
+        Some(build_entry_start_overrides(&dst_bucket).await?)
     } else {
         None
+    };
+
+    let dst_bucket_visitor = CopyToBucketVisitor {
+        dst_bucket: Arc::new(dst_bucket),
     };
 
     start_loading_with_entry_start_overrides(
@@ -229,7 +192,11 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
-        async fn test_visit(context: CliContext, #[future] bucket: String, records: Vec<Record>) {
+        async fn test_copy_records(
+            context: CliContext,
+            #[future] bucket: String,
+            records: Vec<Record>,
+        ) {
             let client = build_client(&context, "local").await.unwrap();
             let dst_bucket_name = bucket.await;
             let src_bucket_name = format!("{}-src", dst_bucket_name);
@@ -239,7 +206,7 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            let src_bucket = client
+            let _src_bucket = client
                 .create_bucket(&src_bucket_name)
                 .exist_ok(true)
                 .send()
@@ -247,15 +214,12 @@ mod tests {
                 .unwrap();
 
             let dst_bucket = Arc::new(dst_bucket);
-            let src_bucket = Arc::new(src_bucket);
             let visitor = CopyToBucketVisitor {
-                src_bucket: Arc::clone(&src_bucket),
                 dst_bucket: Arc::clone(&dst_bucket),
-                attachments_copied: Arc::new(Mutex::new(HashSet::new())),
             };
 
             // should write the record to the destination bucket
-            visitor.visit("test", records).await.unwrap();
+            visitor.copy_records("test", records).await.unwrap();
 
             let record = dst_bucket
                 .read_record("test")
@@ -270,7 +234,7 @@ mod tests {
 
         #[rstest]
         #[tokio::test]
-        async fn test_visit_with_batch(
+        async fn test_copy_records_with_batch(
             context: CliContext,
             #[future] bucket: String,
             batch_records: Vec<Record>,
@@ -284,7 +248,7 @@ mod tests {
                 .send()
                 .await
                 .unwrap();
-            let src_bucket = client
+            let _src_bucket = client
                 .create_bucket(&src_bucket_name)
                 .exist_ok(true)
                 .send()
@@ -292,15 +256,15 @@ mod tests {
                 .unwrap();
 
             let dst_bucket = Arc::new(dst_bucket);
-            let src_bucket = Arc::new(src_bucket);
             let visitor = CopyToBucketVisitor {
-                src_bucket: Arc::clone(&src_bucket),
                 dst_bucket: Arc::clone(&dst_bucket),
-                attachments_copied: Arc::new(Mutex::new(HashSet::new())),
             };
 
             // should write the record to the destination bucket
-            visitor.visit("batch_test", batch_records).await.unwrap();
+            visitor
+                .copy_records("batch_test", batch_records)
+                .await
+                .unwrap();
 
             let record = dst_bucket
                 .read_record("batch_test")
