@@ -12,7 +12,6 @@ use futures_util::StreamExt;
 use mime_guess::get_extensions;
 use reduct_rs::{ErrorCode, Labels, Record, ReductError};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -152,31 +151,6 @@ impl CopyToFolderVisitor {
     }
 }
 
-fn has_ros_extract(ext: &Option<Value>) -> bool {
-    ext.as_ref()
-        .and_then(|ext| ext.get("ros"))
-        .and_then(|ros| ros.get("extract"))
-        .is_some()
-}
-
-fn validate_ext_params_for_bucket_to_folder(
-    args: &ArgMatches,
-    query_params: &crate::parse::QueryParams,
-) -> anyhow::Result<()> {
-    let is_json_export = args
-        .get_one::<String>("ext")
-        .map(|ext| ext.eq_ignore_ascii_case("json"))
-        .unwrap_or(false);
-
-    if is_json_export && has_ros_extract(&query_params.ext) {
-        return Err(anyhow::anyhow!(
-            "ROS extraction to JSON is not supported for `cp` yet; use another output extension or remove `--ext-params` for ROS extraction."
-        ));
-    }
-
-    Ok(())
-}
-
 pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     if args.get_flag("from-last") {
         return Err(anyhow::anyhow!(
@@ -216,7 +190,6 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
     };
 
     let query_params = parse_query_params(ctx, &args, Some(&src_instance))?;
-    validate_ext_params_for_bucket_to_folder(args, &query_params)?;
     let src_bucket = build_client(ctx, &src_instance)
         .await?
         .get_bucket(&src_bucket)
@@ -467,7 +440,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_cp_bucket_to_folder_rejects_ros_extract_json(
+    async fn test_cp_bucket_to_folder_accepts_ros_extract_json_params(
         context: CliContext,
         #[future] bucket: String,
     ) {
@@ -484,31 +457,7 @@ mod tests {
             ])
             .unwrap();
 
-        let err = cp_bucket_to_folder(&context, &args).await.err().unwrap();
-        assert!(err
-            .to_string()
-            .contains("ROS extraction to JSON is not supported"));
-    }
-
-    #[test]
-    fn test_validate_ext_params_for_bucket_to_folder_allows_non_json_export() {
-        let args = cp_cmd()
-            .try_get_matches_from(vec![
-                "cp",
-                "local/src",
-                "./out",
-                "--ext",
-                "mcap",
-                "--ext-params",
-                r#"{"ros":{"extract":{}}}"#,
-            ])
-            .unwrap();
-        let query_params = crate::parse::QueryParams {
-            ext: Some(serde_json::json!({"ros": {"extract": {}}})),
-            ..Default::default()
-        };
-
-        assert!(validate_ext_params_for_bucket_to_folder(&args, &query_params).is_ok());
+        assert!(cp_bucket_to_folder(&context, &args).await.is_ok());
     }
 
     #[rstest]

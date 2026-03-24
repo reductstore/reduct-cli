@@ -264,7 +264,14 @@ impl BucketProgress {
 }
 
 fn build_query(src_bucket: &Bucket, entry: &EntryInfo, query_params: &QueryParams) -> QueryBuilder {
-    let mut query_builder = src_bucket.query(entry.name.as_str());
+    let mut query_builder = if query_params.ext.is_some() {
+        // Force multi-entry query path so batched v2 headers are used.
+        // v2 supports computed labels (e.g. "@...") in label dictionaries,
+        // while legacy v1 batched headers can fail parsing them.
+        src_bucket.query(vec![entry.name.clone(), entry.name.clone()])
+    } else {
+        src_bucket.query(entry.name.as_str())
+    };
     if let Some(start) = query_params.start {
         query_builder = query_builder.start_us(start);
     }
@@ -621,6 +628,11 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
         let mut memory = MEMORY_AMOUNT_LIMIT;
         let mut batch: Vec<Record> = Vec::new();
         let mut retry = false;
+        let mut seen_timestamps = if params.ext.is_some() {
+            Some(HashSet::new())
+        } else {
+            None
+        };
 
         while let Some(record) = record_stream.next().await {
             let record = match record {
@@ -646,6 +658,12 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
                     }
                 }
             };
+
+            if let Some(seen) = seen_timestamps.as_mut() {
+                if !seen.insert(record.timestamp_us()) {
+                    continue;
+                }
+            }
 
             let content_length = record.content_length() as isize;
             if content_length >= MEMORY_AMOUNT_LIMIT {
