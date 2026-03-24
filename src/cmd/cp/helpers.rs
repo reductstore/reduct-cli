@@ -4,7 +4,7 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::parse::{fetch_and_filter_entries, QueryParams};
@@ -366,7 +366,7 @@ where
         &query_params,
         entry_start_overrides.as_ref().map(|v| v.as_ref()),
     );
-    let bucket_progress = Arc::new(StdMutex::new(BucketProgress::new(
+    let bucket_progress = Arc::new(AsyncMutex::new(BucketProgress::new(
         bucket_name,
         display_limit,
         entries.len(),
@@ -411,7 +411,7 @@ where
         }
     }
 
-    let progress_guard = bucket_progress.lock().unwrap();
+    let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
         progress_guard.all_failed();
         return Err(anyhow::anyhow!(
@@ -543,7 +543,7 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
     visitor: Arc<V>,
     semaphore: Arc<tokio::sync::Semaphore>,
     mut params: QueryParams,
-    bucket_progress: Arc<StdMutex<BucketProgress>>,
+    bucket_progress: Arc<AsyncMutex<BucketProgress>>,
     copied_attachments: Arc<AsyncMutex<HashSet<String>>>,
 ) -> EntryCopyOutcome {
     // Copy one entry with retry logic and bounded batching to control memory usage.
@@ -719,7 +719,7 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
     entry_name: &str,
     batch: &mut Vec<Record>,
     visitor: &V,
-    bucket_progress: &Arc<StdMutex<BucketProgress>>,
+    bucket_progress: &Arc<AsyncMutex<BucketProgress>>,
     attempts: &mut u8,
     timestamp: &mut u64,
     record_count: &mut u64,
@@ -741,7 +741,8 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
     for (ts, len) in batch_info {
         *record_count += 1;
         *timestamp = ts;
-        if let Ok(mut progress) = bucket_progress.lock() {
+        {
+            let mut progress = bucket_progress.lock().await;
             progress.update(entry_name, ts, len);
         }
         sleep(Duration::from_micros(5)).await;
@@ -756,7 +757,7 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
 // we also need to adjust the limit if we have one
 async fn make_attempt(
     attempts: &mut u8,
-    bucket_progress: &Arc<StdMutex<BucketProgress>>,
+    bucket_progress: &Arc<AsyncMutex<BucketProgress>>,
     params: &mut QueryParams,
     record_count: u64,
     timestamp: u64,
@@ -773,7 +774,8 @@ async fn make_attempt(
             params.limit = Some(limit.saturating_sub(record_count));
         }
 
-        if let Ok(progress) = bucket_progress.lock() {
+        {
+            let progress = bucket_progress.lock().await;
             progress.print_warning(format!(
                 "{}. Retrying... (attempts {} / {})",
                 err, *attempts, DOWNLOAD_ATTEMPTS
