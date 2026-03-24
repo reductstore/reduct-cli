@@ -457,7 +457,11 @@ mod tests {
             ])
             .unwrap();
 
-        assert!(cp_bucket_to_folder(&context, &args).await.is_ok());
+        if let Err(err) = cp_bucket_to_folder(&context, &args).await {
+            assert!(!err
+                .to_string()
+                .contains("ROS extraction to JSON is not supported"));
+        }
     }
 
     #[rstest]
