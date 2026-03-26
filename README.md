@@ -19,11 +19,34 @@ blob data.
 
 ## Installing
 
+### From Cargo
+
 ```shell
 cargo install reduct-cli
 ```
 
-Or check pre-built binaries [here](https://github.com/reductstore/reduct-cli/releases/latest)
+### From pre-built binaries
+
+You can also install `reduct-cli` from the latest release binaries.
+
+#### Linux (amd64)
+
+```bash
+wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.x86_64-unknown-linux-gnu.tar.gz
+tar -xvf reduct-cli.x86_64-unknown-linux-gnu.tar.gz
+chmod +x reduct-cli
+sudo mv reduct-cli /usr/local/bin
+```
+
+#### Windows (amd64)
+
+```powershell
+Invoke-WebRequest -Uri https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.x86_64-pc-windows-gnu.zip -OutFile reduct-cli.zip
+Expand-Archive -LiteralPath reduct-cli.zip -DestinationPath .
+.\reduct-cli.exe
+```
+
+We support many additional platforms. Download binaries and sources from the latest release: [GitHub Releases](https://github.com/reductstore/reduct-cli/releases/latest)
 
 ## Usage
 
