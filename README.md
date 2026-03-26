@@ -27,40 +27,13 @@ cargo install reduct-cli
 
 ### From pre-built binaries
 
-You can also install `reduct-cli` from the latest release binaries (same as on the Downloads page):
+You can also install `reduct-cli` from the latest release binaries.
 
 #### Linux (amd64)
 
 ```bash
 wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.x86_64-unknown-linux-gnu.tar.gz
 tar -xvf reduct-cli.x86_64-unknown-linux-gnu.tar.gz
-chmod +x reduct-cli
-sudo mv reduct-cli /usr/local/bin
-```
-
-#### Linux (arm64)
-
-```bash
-wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.aarch64-unknown-linux-gnu.tar.gz
-tar -xvf reduct-cli.aarch64-unknown-linux-gnu.tar.gz
-chmod +x reduct-cli
-sudo mv reduct-cli /usr/local/bin
-```
-
-#### macOS (Intel)
-
-```bash
-wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.x86_64-apple-darwin.tar.gz
-tar -xvf reduct-cli.x86_64-apple-darwin.tar.gz
-chmod +x reduct-cli
-sudo mv reduct-cli /usr/local/bin
-```
-
-#### macOS (Apple Silicon)
-
-```bash
-wget https://github.com/reductstore/reduct-cli/releases/latest/download/reduct-cli.aarch64-apple-darwin.tar.gz
-tar -xvf reduct-cli.aarch64-apple-darwin.tar.gz
 chmod +x reduct-cli
 sudo mv reduct-cli /usr/local/bin
 ```
@@ -73,7 +46,7 @@ Expand-Archive -LiteralPath reduct-cli.zip -DestinationPath .
 .\reduct-cli.exe
 ```
 
-All available binaries and sources: [GitHub Releases](https://github.com/reductstore/reduct-cli/releases/latest)
+We support many additional platforms. Download binaries and sources from the latest release: [GitHub Releases](https://github.com/reductstore/reduct-cli/releases/latest)
 
 ## Usage
 

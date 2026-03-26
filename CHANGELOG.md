@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add `attachment write`, `attachment ls`, `attachment read`, and `attachment rm` commands for entry attachments, [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
 - Add global `--ca-cert` and persist alias connection options (`--ca-cert`, `--ignore-ssl`, `--timeout`, `--parallel`) in `alias add`, [PR-189](https://github.com/reductstore/reduct-cli/pull/189)
-- Add pre-built binary installation instructions to README for Linux, macOS, and Windows, [PR-199](https://github.com/reductstore/reduct-cli/pull/199)
+- Add pre-built binary installation instructions to README for Linux and Windows and link to additional release assets, [PR-199](https://github.com/reductstore/reduct-cli/pull/199)
 
 ### Fixed
 
