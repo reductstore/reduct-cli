@@ -10,7 +10,7 @@ use crate::context::CliContext;
 use crate::helpers::timestamp_to_iso;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
@@ -75,10 +75,14 @@ impl From<EntryInfo> for EntryTable {
 }
 
 pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, bucket_name) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
+    let (alias_or_url, bucket_name) = args
+        .get_one::<Resource>("BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
-    let client: ReductClient = build_client(ctx, alias_or_url).await?;
-    let bucket = client.get_bucket(bucket_name).await?.full_info().await?;
+    let client: ReductClient = build_client(ctx, &alias_or_url).await?;
+    let bucket = client.get_bucket(&bucket_name).await?.full_info().await?;
 
     if args.get_flag("full") {
         print_full_bucket(ctx, bucket)?;

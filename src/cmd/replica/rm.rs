@@ -7,6 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
+use crate::parse::Resource;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 
@@ -31,8 +32,10 @@ pub(super) fn rm_replica_cmd() -> Command {
 
 pub(super) async fn rm_replica_handler(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     let (alias_or_url, replication_name) = args
-        .get_one::<(String, String)>("REPLICATION_PATH")
-        .unwrap();
+        .get_one::<Resource>("REPLICATION_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
     let confirm = if !args.get_flag("yes") {
         let confirm = dialoguer::Confirm::new()
@@ -48,8 +51,8 @@ pub(super) async fn rm_replica_handler(ctx: &CliContext, args: &ArgMatches) -> a
     };
 
     if confirm {
-        let client = build_client(ctx, alias_or_url).await?;
-        client.delete_replication(replication_name).await?;
+        let client = build_client(ctx, &alias_or_url).await?;
+        client.delete_replication(&replication_name).await?;
         output!(ctx, "Replication '{}' deleted", replication_name);
     } else {
         output!(ctx, "Replication '{}' not deleted", replication_name);

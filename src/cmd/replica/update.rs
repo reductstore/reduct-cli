@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::ReplicationSettings;
@@ -46,8 +46,10 @@ pub(super) async fn update_replica_handler(
     args: &ArgMatches,
 ) -> anyhow::Result<()> {
     let (alias_or_url, replication_name) = args
-        .get_one::<(String, String)>("REPLICATION_PATH")
-        .unwrap();
+        .get_one::<Resource>("REPLICATION_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
     let client = build_client(ctx, &alias_or_url).await?;
     let current_settings = client.get_replication(&replication_name).await?.settings;
@@ -66,8 +68,10 @@ fn update_replication_settings(
 ) -> anyhow::Result<ReplicationSettings> {
     // we require the destination bucket path because it is the only way to obtain the access token
     let (dest_alias_or_url, dest_bucket_name) = args
-        .get_one::<(String, String)>("DEST_BUCKET_PATH")
-        .unwrap();
+        .get_one::<Resource>("DEST_BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
     let source_bucket_name = args.get_one::<String>("source-bucket");
 

@@ -4,10 +4,9 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::cp::helpers::{start_loading_with_entry_start_overrides, CopyVisitor};
-use crate::cmd::cp::CpPath;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
-use crate::parse::parse_query_params;
+use crate::parse::{parse_query_params, Resource};
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
 use serde_json::Value;
@@ -81,6 +80,11 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
     let (src_instance, src_bucket) = parse_bucket_pair(args, "SOURCE_BUCKET_OR_FOLDER")?;
     let (dst_instance, dst_bucket) = parse_bucket_pair(args, "DESTINATION_BUCKET_OR_FOLDER")?;
 
+    let source_entry_filter = match args.get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
+        Resource::ResourceWithPath(_, _, entry_path) => Some(entry_path.clone()),
+        _ => None,
+    };
+
     cp_bucket_to_bucket_with(
         ctx,
         args,
@@ -88,6 +92,7 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
         &src_bucket,
         &dst_instance,
         &dst_bucket,
+        source_entry_filter,
     )
     .await
 }
@@ -99,8 +104,12 @@ pub(crate) async fn cp_bucket_to_bucket_with(
     src_bucket_name: &str,
     dst_instance: &str,
     dst_bucket_name: &str,
+    source_entry_filter: Option<String>,
 ) -> anyhow::Result<()> {
-    let query_params = parse_query_params(ctx, &args, Some(src_instance))?;
+    let mut query_params = parse_query_params(ctx, &args, Some(src_instance))?;
+    if let Some(entry_path) = source_entry_filter {
+        query_params.entry_filter.push(entry_path);
+    }
     let from_last = args.get_flag("from-last");
     if from_last && args.get_one::<String>("start").is_some() {
         return Err(anyhow::anyhow!("--from-last can't be used with --start"));
@@ -148,14 +157,16 @@ pub(crate) async fn cp_bucket_to_bucket_with(
 }
 
 fn parse_bucket_pair(args: &ArgMatches, key: &str) -> anyhow::Result<(String, String)> {
-    let value = args.get_one::<CpPath>(key).unwrap();
+    let value = args.get_one::<Resource>(key).unwrap();
     match value {
-        CpPath::Bucket { instance, bucket } => Ok((instance.clone(), bucket.clone())),
-        CpPath::Folder(_) => Err(anyhow::anyhow!(
+        Resource::Resource(instance, bucket) | Resource::ResourceWithPath(instance, bucket, _) => {
+            Ok((instance.clone(), bucket.clone()))
+        }
+        Resource::Folder(_) => Err(anyhow::anyhow!(
             "Expected a bucket path for '{}', but got a folder path",
             key
         )),
-        CpPath::Instance(_) => Err(anyhow::anyhow!(
+        Resource::Alias(_) => Err(anyhow::anyhow!(
             "Expected a bucket path for '{}', but got an instance only",
             key
         )),

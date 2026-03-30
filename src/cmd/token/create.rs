@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::{Permissions, ReductClient};
@@ -50,7 +50,11 @@ pub(super) fn create_token_cmd() -> Command {
 }
 
 pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, token_name) = args.get_one::<(String, String)>("TOKEN_PATH").unwrap();
+    let (alias_or_url, token_name) = args
+        .get_one::<Resource>("TOKEN_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let full_access = args.get_flag("full-access");
     let read_buckets = args
         .get_many::<String>("read-bucket")
@@ -63,10 +67,10 @@ pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
-    let client: ReductClient = build_client(ctx, alias_or_url).await?;
+    let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let token = client
         .create_token(
-            token_name,
+            &token_name,
             Permissions {
                 full_access,
                 read: read_buckets,

@@ -12,4 +12,4 @@ pub(crate) mod widely_used_args;
 pub(crate) use byte_size::ByteSizeParser;
 pub(crate) use helpers::{fetch_and_filter_entries, parse_query_params, parse_time, QueryParams};
 pub(crate) use quota_type::QuotaTypeParser;
-pub(crate) use resource_path::ResourcePathParser;
+pub(crate) use resource_path::{Resource, ResourcePathParser};

@@ -7,7 +7,7 @@ use crate::context::CliContext;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-use crate::parse::{fetch_and_filter_entries, ResourcePathParser};
+use crate::parse::{fetch_and_filter_entries, Resource, ResourcePathParser};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::ReductClient;
@@ -41,7 +41,11 @@ pub(super) fn rm_bucket_cmd() -> Command {
 }
 
 pub(super) async fn rm_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, bucket_name) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
+    let (alias_or_url, bucket_name) = args
+        .get_one::<Resource>("BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let only_entries = args
         .get_many::<String>("only-entries")
         .unwrap_or_default()
@@ -49,9 +53,9 @@ pub(super) async fn rm_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
         .collect::<Vec<String>>();
 
     if !only_entries.is_empty() {
-        remove_entries(ctx, args, alias_or_url, bucket_name, only_entries).await?;
+        remove_entries(ctx, args, &alias_or_url, &bucket_name, only_entries).await?;
     } else {
-        remove_entire_bucket(ctx, args, alias_or_url, bucket_name).await?;
+        remove_entire_bucket(ctx, args, &alias_or_url, &bucket_name).await?;
     }
     Ok(())
 }
@@ -77,8 +81,8 @@ async fn remove_entire_bucket(
     };
 
     if confirm {
-        let client: ReductClient = build_client(ctx, alias_or_url).await?;
-        client.get_bucket(bucket_name).await?.remove().await?;
+        let client: ReductClient = build_client(ctx, &alias_or_url).await?;
+        client.get_bucket(&bucket_name).await?.remove().await?;
 
         output!(ctx, "Bucket '{}' deleted", bucket_name);
     } else {
@@ -94,8 +98,8 @@ async fn remove_entries(
     bucket_name: &String,
     only_entries: Vec<String>,
 ) -> anyhow::Result<()> {
-    let client: ReductClient = build_client(ctx, alias_or_url).await?;
-    let bucket = client.get_bucket(bucket_name).await?;
+    let client: ReductClient = build_client(ctx, &alias_or_url).await?;
+    let bucket = client.get_bucket(&bucket_name).await?;
 
     let entries = fetch_and_filter_entries(&bucket, &only_entries)
         .await?
@@ -207,7 +211,7 @@ mod tests {
     async fn wait_for_empty_entries(client: &ReductClient, bucket_name: &str) {
         for _ in 0..50 {
             let count = client
-                .get_bucket(bucket_name)
+                .get_bucket(&bucket_name)
                 .await
                 .unwrap()
                 .entries()
@@ -223,7 +227,7 @@ mod tests {
 
     async fn wait_for_bucket_removed(client: &ReductClient, bucket_name: &str) {
         for _ in 0..50 {
-            match client.get_bucket(bucket_name).await {
+            match client.get_bucket(&bucket_name).await {
                 Ok(_) => sleep(std::time::Duration::from_millis(100)).await,
                 Err(err) => {
                     if err.status() == ErrorCode::NotFound {
@@ -234,7 +238,12 @@ mod tests {
             }
         }
         assert_eq!(
-            client.get_bucket(bucket_name).await.err().unwrap().status(),
+            client
+                .get_bucket(&bucket_name)
+                .await
+                .err()
+                .unwrap()
+                .status(),
             ErrorCode::NotFound
         );
     }

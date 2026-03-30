@@ -14,7 +14,9 @@ use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_strict_arg, make_when_arg,
 };
-use crate::parse::{fetch_and_filter_entries, parse_query_params, QueryParams, ResourcePathParser};
+use crate::parse::{
+    fetch_and_filter_entries, parse_query_params, QueryParams, Resource, ResourcePathParser,
+};
 use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -64,8 +66,12 @@ pub(crate) fn rm_cmd() -> Command {
 }
 
 pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    let (alias, bucket) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
-    let query_params = parse_query_params(ctx, &args, Some(alias.as_str()))?;
+    let bucket_path = args.get_one::<Resource>("BUCKET_PATH").unwrap().clone();
+    let (alias, bucket, entry_path) = bucket_path.triple()?;
+    let mut query_params = parse_query_params(ctx, &args, Some(alias.as_str()))?;
+    if let Some(entry_path) = entry_path {
+        query_params.entry_filter.push(entry_path);
+    }
     let timestamps = args
         .get_many::<String>("time")
         .map(|values| values.map(|s| s.clone()).collect::<Vec<String>>());
@@ -220,6 +226,17 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(err.status(), ErrorCode::NotFound);
+    }
+
+    #[test]
+    fn test_parse_bucket_path_with_nested_entry() {
+        let (alias, bucket, entry) =
+            Resource::ResourceWithPath("local".to_string(), "src".to_string(), "x/y".to_string())
+                .triple()
+                .unwrap();
+        assert_eq!(alias, "local");
+        assert_eq!(bucket, "src");
+        assert_eq!(entry.as_deref(), Some("x/y"));
     }
 
     #[fixture]

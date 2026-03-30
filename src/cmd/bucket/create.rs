@@ -9,6 +9,7 @@ use crate::context::CliContext;
 use crate::io::reduct::build_client;
 
 use crate::io::std::output;
+use crate::parse::Resource;
 use clap::{ArgMatches, Command};
 use reduct_rs::ReductClient;
 
@@ -18,12 +19,16 @@ pub(super) fn create_bucket_cmd() -> Command {
 }
 
 pub(super) async fn create_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, bucket_name) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
+    let (alias_or_url, bucket_name) = args
+        .get_one::<Resource>("BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let bucket_settings = parse_bucket_settings(args);
 
-    let client: ReductClient = build_client(ctx, alias_or_url).await?;
+    let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     client
-        .create_bucket(bucket_name)
+        .create_bucket(&bucket_name)
         .settings(bucket_settings)
         .send()
         .await?;
