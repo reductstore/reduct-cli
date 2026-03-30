@@ -161,9 +161,7 @@ fn parse_bucket_pair(args: &ArgMatches, key: &str) -> anyhow::Result<(String, St
     let value = args.get_one::<CpPath>(key).unwrap();
     match value {
         CpPath::Bucket {
-            instance,
-            bucket,
-            ..
+            instance, bucket, ..
         } => Ok((instance.clone(), bucket.clone())),
         CpPath::Folder(_) => Err(anyhow::anyhow!(
             "Expected a bucket path for '{}', but got a folder path",
