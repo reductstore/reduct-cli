@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Support nested entry paths and wildcards in `cp`/`rm` bucket path arguments (e.g. `local/src/x/y`), [PR-200](https://github.com/reductstore/reduct-cli/pull/200)
 - Copy entry attachments during bucket-to-bucket `cp` transfers so metadata is preserved, [PR-196](https://github.com/reductstore/reduct-cli/pull/196)
 - Fix `cp` progress estimation to use time windows with `--start/--stop` and use record-count mode when a limit is set via `--limit` or `--when` (`$limit`), [PR-184](https://github.com/reductstore/reduct-cli/pull/184)
 
