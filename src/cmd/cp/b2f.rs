@@ -4,7 +4,6 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::cp::helpers::{start_loading, CopyVisitor};
-use crate::cmd::cp::CpPath;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use clap::ArgMatches;
@@ -17,7 +16,7 @@ use std::path::PathBuf;
 
 use tokio::io::AsyncWriteExt;
 
-use crate::parse::parse_query_params;
+use crate::parse::{parse_query_params, Resource};
 use tokio::{fs, pin};
 
 struct CopyToFolderVisitor {
@@ -159,34 +158,33 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
     }
 
     let (src_instance, src_bucket, source_entry_filter) =
-        match args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
-            CpPath::Bucket {
-                instance,
-                bucket,
-                entry_path,
-            } => (instance.clone(), bucket.clone(), entry_path.clone()),
-            CpPath::Folder(_) => {
+        match args.get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
+            Resource::Resource(instance, bucket) => (instance.clone(), bucket.clone(), None),
+            Resource::ResourceWithPath(instance, bucket, entry_path) => {
+                (instance.clone(), bucket.clone(), Some(entry_path.clone()))
+            }
+            Resource::Folder(_) => {
                 return Err(anyhow::anyhow!(
                     "Expected a bucket source, but got a folder path"
                 ))
             }
-            CpPath::Instance(_) => {
+            Resource::Alias(_) => {
                 return Err(anyhow::anyhow!(
                     "Expected a bucket source, but got an instance only"
                 ))
             }
         };
     let dst_folder = match args
-        .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+        .get_one::<Resource>("DESTINATION_BUCKET_OR_FOLDER")
         .unwrap()
     {
-        CpPath::Folder(path) => PathBuf::from(path),
-        CpPath::Bucket { .. } => {
+        Resource::Folder(path) => PathBuf::from(path),
+        Resource::Resource(_, _) | Resource::ResourceWithPath(_, _, _) => {
             return Err(anyhow::anyhow!(
                 "Expected a folder destination, but got a bucket path"
             ))
         }
-        CpPath::Instance(_) => {
+        Resource::Alias(_) => {
             return Err(anyhow::anyhow!(
                 "Expected a folder destination, but got an instance only"
             ))

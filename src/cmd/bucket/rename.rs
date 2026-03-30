@@ -2,6 +2,7 @@ use crate::context::CliContext;
 
 use crate::io::reduct::build_client;
 use crate::io::std::output;
+use crate::parse::Resource;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::ReductClient;
 
@@ -29,18 +30,22 @@ pub(super) fn rename_bucket_cmd() -> Command {
 }
 
 pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, bucket_name) = args.get_one::<(String, String)>("BUCKET_PATH").unwrap();
+    let (alias_or_url, bucket_name) = args
+        .get_one::<Resource>("BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let new_name = args.get_one::<String>("NEW_NAME").unwrap();
     let entry_name = args.get_one::<String>("only-entry");
 
-    let client: ReductClient = build_client(ctx, alias_or_url).await?;
+    let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     if let Some(entry_name) = entry_name {
-        let bucket = client.get_bucket(bucket_name).await?;
+        let bucket = client.get_bucket(&bucket_name).await?;
         bucket.rename_entry(entry_name, new_name).await?;
         output!(ctx, "Entry '{}' renamed to '{}'", entry_name, new_name);
     } else {
         client
-            .get_bucket(bucket_name)
+            .get_bucket(&bucket_name)
             .await?
             .rename(new_name)
             .await?;

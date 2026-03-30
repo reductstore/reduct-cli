@@ -8,6 +8,7 @@ use crate::cmd::table::{build_info_table, labeled_cell};
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
+use crate::parse::Resource;
 use clap::{Arg, Command};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
@@ -47,11 +48,13 @@ pub(super) async fn show_replica_handler(
     args: &clap::ArgMatches,
 ) -> anyhow::Result<()> {
     let (alias_or_url, replication_name) = args
-        .get_one::<(String, String)>("REPLICATION_PATH")
-        .unwrap();
-    let client = build_client(ctx, alias_or_url).await?;
+        .get_one::<Resource>("REPLICATION_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
+    let client = build_client(ctx, &alias_or_url).await?;
 
-    let replica = client.get_replication(replication_name).await?;
+    let replica = client.get_replication(&replication_name).await?;
 
     let mut info_cells = vec![
         labeled_cell("Name", replica.info.name.clone()),

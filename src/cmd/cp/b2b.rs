@@ -4,10 +4,9 @@
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use crate::cmd::cp::helpers::{start_loading_with_entry_start_overrides, CopyVisitor};
-use crate::cmd::cp::CpPath;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
-use crate::parse::parse_query_params;
+use crate::parse::{parse_query_params, Resource};
 use clap::ArgMatches;
 use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
 use serde_json::Value;
@@ -81,8 +80,8 @@ pub(crate) async fn cp_bucket_to_bucket(ctx: &CliContext, args: &ArgMatches) -> 
     let (src_instance, src_bucket) = parse_bucket_pair(args, "SOURCE_BUCKET_OR_FOLDER")?;
     let (dst_instance, dst_bucket) = parse_bucket_pair(args, "DESTINATION_BUCKET_OR_FOLDER")?;
 
-    let source_entry_filter = match args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
-        CpPath::Bucket { entry_path, .. } => entry_path.clone(),
+    let source_entry_filter = match args.get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
+        Resource::ResourceWithPath(_, _, entry_path) => Some(entry_path.clone()),
         _ => None,
     };
 
@@ -158,16 +157,16 @@ pub(crate) async fn cp_bucket_to_bucket_with(
 }
 
 fn parse_bucket_pair(args: &ArgMatches, key: &str) -> anyhow::Result<(String, String)> {
-    let value = args.get_one::<CpPath>(key).unwrap();
+    let value = args.get_one::<Resource>(key).unwrap();
     match value {
-        CpPath::Bucket {
-            instance, bucket, ..
-        } => Ok((instance.clone(), bucket.clone())),
-        CpPath::Folder(_) => Err(anyhow::anyhow!(
+        Resource::Resource(instance, bucket) | Resource::ResourceWithPath(instance, bucket, _) => {
+            Ok((instance.clone(), bucket.clone()))
+        }
+        Resource::Folder(_) => Err(anyhow::anyhow!(
             "Expected a bucket path for '{}', but got a folder path",
             key
         )),
-        CpPath::Instance(_) => Err(anyhow::anyhow!(
+        Resource::Alias(_) => Err(anyhow::anyhow!(
             "Expected a bucket path for '{}', but got an instance only",
             key
         )),

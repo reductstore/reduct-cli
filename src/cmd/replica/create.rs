@@ -6,7 +6,7 @@
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
 use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, Command};
 use reduct_rs::ReplicationSettings;
 
@@ -42,12 +42,16 @@ pub(super) async fn create_replica(
     args: &clap::ArgMatches,
 ) -> anyhow::Result<()> {
     let (alias_or_url, replication_name) = args
-        .get_one::<(String, String)>("REPLICATION_PATH")
-        .unwrap();
+        .get_one::<Resource>("REPLICATION_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let source_bucket_name = args.get_one::<String>("SOURCE_BUCKET_NAME").unwrap();
     let (dest_alias_or_url, dest_bucket_name) = args
-        .get_one::<(String, String)>("DEST_BUCKET_PATH")
-        .unwrap();
+        .get_one::<Resource>("DEST_BUCKET_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
     let entries_filter = args
         .get_many::<String>("entries")
         .unwrap_or_default()
@@ -74,7 +78,7 @@ pub(super) async fn create_replica(
         settings.when = Some(serde_json::from_str(&when)?);
     }
     client
-        .create_replication(replication_name)
+        .create_replication(&replication_name)
         .set_settings(settings)
         .send()
         .await?;

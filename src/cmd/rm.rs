@@ -14,7 +14,9 @@ use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_strict_arg, make_when_arg,
 };
-use crate::parse::{fetch_and_filter_entries, parse_query_params, QueryParams};
+use crate::parse::{
+    fetch_and_filter_entries, parse_query_params, QueryParams, Resource, ResourcePathParser,
+};
 use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -30,6 +32,7 @@ pub(crate) fn rm_cmd() -> Command {
         .arg(
             Arg::new("BUCKET_PATH")
                 .help(ALIAS_OR_URL_HELP)
+                .value_parser(ResourcePathParser::new())
                 .required(true),
         )
         .arg(
@@ -63,8 +66,8 @@ pub(crate) fn rm_cmd() -> Command {
 }
 
 pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    let bucket_path = args.get_one::<String>("BUCKET_PATH").unwrap();
-    let (alias, bucket, entry_path) = parse_bucket_path(bucket_path)?;
+    let bucket_path = args.get_one::<Resource>("BUCKET_PATH").unwrap().clone();
+    let (alias, bucket, entry_path) = bucket_path.triple()?;
     let mut query_params = parse_query_params(ctx, &args, Some(alias.as_str()))?;
     if let Some(entry_path) = entry_path {
         query_params.entry_filter.push(entry_path);
@@ -122,58 +125,6 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
         let _ = result?;
     }
     Ok(())
-}
-
-fn parse_bucket_path(path: &str) -> anyhow::Result<(String, String, Option<String>)> {
-    if let Ok(mut url) = url::Url::parse(path) {
-        let scheme = url.scheme();
-        if scheme == "http" || scheme == "https" {
-            url.set_query(None);
-            url.set_fragment(None);
-
-            let mut segments: Vec<String> = url
-                .path_segments()
-                .map(|segments| {
-                    segments
-                        .filter(|segment| !segment.is_empty())
-                        .map(|s| s.to_string())
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            if segments.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Bucket path must include a bucket (e.g. http://host/BUCKET)"
-                ));
-            }
-
-            let bucket = segments.remove(0).to_string();
-            let entry_path = if segments.is_empty() {
-                None
-            } else {
-                Some(segments.join("/"))
-            };
-
-            url.set_path("/");
-            return Ok((url.to_string(), bucket, entry_path));
-        }
-    }
-
-    let mut segments = path.split('/').filter(|segment| !segment.is_empty());
-    let alias = segments
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Bucket path must be in the format ALIAS/BUCKET"))?;
-    let bucket = segments
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("Bucket path must be in the format ALIAS/BUCKET"))?;
-    let rest: Vec<&str> = segments.collect();
-    let entry_path = if rest.is_empty() {
-        None
-    } else {
-        Some(rest.join("/"))
-    };
-
-    Ok((alias.to_string(), bucket.to_string(), entry_path))
 }
 
 /// Trait for removing records from a bucket
@@ -279,7 +230,10 @@ mod tests {
 
     #[test]
     fn test_parse_bucket_path_with_nested_entry() {
-        let (alias, bucket, entry) = parse_bucket_path("local/src/x/y").unwrap();
+        let (alias, bucket, entry) =
+            Resource::ResourceWithPath("local".to_string(), "src".to_string(), "x/y".to_string())
+                .triple()
+                .unwrap();
         assert_eq!(alias, "local");
         assert_eq!(bucket, "src");
         assert_eq!(entry.as_deref(), Some("x/y"));

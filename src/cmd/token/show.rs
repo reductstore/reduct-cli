@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -24,10 +24,14 @@ pub(super) fn show_token_cmd() -> Command {
 }
 
 pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
-    let (alias_or_url, token_name) = args.get_one::<(String, String)>("TOKEN_PATH").unwrap();
+    let (alias_or_url, token_name) = args
+        .get_one::<Resource>("TOKEN_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
-    let client = build_client(ctx, alias_or_url).await?;
-    let token = client.get_token(token_name).await?;
+    let client = build_client(ctx, &alias_or_url).await?;
+    let token = client.get_token(&token_name).await?;
 
     let bool_icon = |value: bool| if value { "✓" } else { "-" };
 

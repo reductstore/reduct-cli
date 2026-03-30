@@ -15,118 +15,14 @@ use crate::io::std::output;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_ext_arg, make_strict_arg, make_when_arg,
 };
-use clap::builder::TypedValueParser;
-use clap::error::{ContextKind, ContextValue, ErrorKind};
+use crate::parse::{Resource, ResourcePathParser};
 use clap::ArgAction::SetTrue;
-use clap::{value_parser, Arg, Command, Error};
-use std::ffi::OsStr;
-use url::Url;
+use clap::{value_parser, Arg, Command};
 
 const CP_SOURCE_HELP: &str =
     "Source bucket or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS/*, SERVER_ALIAS/test-*, or ./folder)";
 const CP_DEST_HELP: &str =
     "Destination bucket, instance, or folder (e.g. SERVER_ALIAS/BUCKET, SERVER_ALIAS, or ./folder)";
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CpPath {
-    Folder(String),
-    Bucket {
-        instance: String,
-        bucket: String,
-        entry_path: Option<String>,
-    },
-    Instance(String),
-}
-
-#[derive(Clone)]
-struct CpPathParser;
-
-impl TypedValueParser for CpPathParser {
-    type Value = CpPath;
-
-    fn parse_ref(
-        &self,
-        cmd: &Command,
-        arg: Option<&Arg>,
-        value: &OsStr,
-    ) -> Result<Self::Value, Error> {
-        let value = value.to_string_lossy().to_string();
-        let is_folder = [".", "/", ".."].iter().any(|s| value.starts_with(s));
-        if is_folder {
-            return Ok(CpPath::Folder(value));
-        }
-
-        if let Ok(mut url) = Url::parse(&value) {
-            let scheme = url.scheme();
-            if scheme == "http" || scheme == "https" {
-                url.set_query(None);
-                url.set_fragment(None);
-
-                let path = url.path();
-                let has_trailing_slash = path.ends_with('/') && path != "/";
-                let mut segments: Vec<&str> = url
-                    .path_segments()
-                    .map(|segments| segments.filter(|segment| !segment.is_empty()).collect())
-                    .unwrap_or_default();
-
-                if segments.is_empty() || has_trailing_slash {
-                    return Ok(CpPath::Instance(url.to_string()));
-                }
-
-                let bucket = segments
-                    .pop()
-                    .ok_or_else(|| Error::new(ErrorKind::ValueValidation).with_cmd(cmd))?;
-                let base_path = if segments.is_empty() {
-                    "/".to_string()
-                } else {
-                    format!("/{}/", segments.join("/"))
-                };
-                let mut base_url = url.clone();
-                base_url.set_path(&base_path);
-                return Ok(CpPath::Bucket {
-                    instance: base_url.to_string(),
-                    bucket: bucket.to_string(),
-                    entry_path: None,
-                });
-            }
-        }
-
-        if value.contains('/') {
-            let mut segments = value.split('/').filter(|segment| !segment.is_empty());
-            if let Some(instance) = segments.next() {
-                let bucket = segments.next();
-                let entry_segments: Vec<&str> = segments.collect();
-
-                if let Some(bucket) = bucket {
-                    let entry_path = if entry_segments.is_empty() {
-                        None
-                    } else {
-                        Some(entry_segments.join("/"))
-                    };
-                    return Ok(CpPath::Bucket {
-                        instance: instance.to_string(),
-                        bucket: bucket.to_string(),
-                        entry_path,
-                    });
-                }
-
-                return Ok(CpPath::Instance(instance.to_string()));
-            }
-        }
-
-        if value.is_empty() {
-            let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
-            err.insert(
-                ContextKind::InvalidArg,
-                ContextValue::String(arg.unwrap().to_string()),
-            );
-            err.insert(ContextKind::InvalidValue, ContextValue::String(value));
-            Err(err)
-        } else {
-            Ok(CpPath::Instance(value))
-        }
-    }
-}
 
 pub(crate) fn cp_cmd() -> Command {
     Command::new("cp")
@@ -135,13 +31,13 @@ pub(crate) fn cp_cmd() -> Command {
         .arg(
             Arg::new("SOURCE_BUCKET_OR_FOLDER")
                 .help(CP_SOURCE_HELP)
-                .value_parser(CpPathParser)
+                .value_parser(ResourcePathParser::new())
                 .required(true),
         )
         .arg(
             Arg::new("DESTINATION_BUCKET_OR_FOLDER")
                 .help(CP_DEST_HELP)
-                .value_parser(CpPathParser)
+                .value_parser(ResourcePathParser::new())
                 .required(true),
         )
         .arg(
@@ -210,22 +106,26 @@ pub(crate) fn cp_cmd() -> Command {
 
 pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
     let src = args
-        .get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER")
+        .get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER")
         .unwrap()
         .clone();
     let dst = args
-        .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+        .get_one::<Resource>("DESTINATION_BUCKET_OR_FOLDER")
         .unwrap()
         .clone();
 
     match (src, dst) {
-        (CpPath::Folder(_), CpPath::Folder(_)) => {
+        (Resource::Folder(_), Resource::Folder(_)) => {
             Err(anyhow::anyhow!("Folder to folder copy is not supported."))
         }
-        (CpPath::Folder(_), CpPath::Bucket { .. } | CpPath::Instance(_)) => {
-            Err(anyhow::anyhow!("Folder to bucket copy is not supported."))
-        }
-        (CpPath::Bucket { bucket, .. }, CpPath::Folder(_)) => {
+        (
+            Resource::Folder(_),
+            Resource::Resource(_, _) | Resource::ResourceWithPath(_, _, _) | Resource::Alias(_),
+        ) => Err(anyhow::anyhow!("Folder to bucket copy is not supported.")),
+        (
+            Resource::Resource(_, bucket) | Resource::ResourceWithPath(_, bucket, _),
+            Resource::Folder(_),
+        ) => {
             if bucket_wildcard_prefix(&bucket)?.is_some() {
                 return Err(anyhow::anyhow!(
                     "Wildcard bucket copy requires the destination to be an instance only."
@@ -235,12 +135,9 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
             Ok(())
         }
         (
-            CpPath::Bucket {
-                instance: src_instance,
-                bucket: src_bucket,
-                ..
-            },
-            CpPath::Instance(dst_instance),
+            Resource::Resource(src_instance, src_bucket)
+            | Resource::ResourceWithPath(src_instance, src_bucket, _),
+            Resource::Alias(dst_instance),
         ) => {
             if let Some(prefix) = bucket_wildcard_prefix(&src_bucket)? {
                 if prefix.is_empty() {
@@ -260,12 +157,8 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
             Ok(())
         }
         (
-            CpPath::Bucket {
-                bucket: src_bucket, ..
-            },
-            CpPath::Bucket {
-                bucket: dst_bucket, ..
-            },
+            Resource::Resource(_, src_bucket) | Resource::ResourceWithPath(_, src_bucket, _),
+            Resource::Resource(_, dst_bucket) | Resource::ResourceWithPath(_, dst_bucket, _),
         ) => {
             if bucket_wildcard_prefix(&src_bucket)?.is_some()
                 || bucket_wildcard_prefix(&dst_bucket)?.is_some()
@@ -277,7 +170,7 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
             cp_bucket_to_bucket(ctx, args).await?;
             Ok(())
         }
-        (CpPath::Instance(_), _) => Err(anyhow::anyhow!(
+        (Resource::Alias(_), _) => Err(anyhow::anyhow!(
             "Source must include a bucket name or use '*' for all buckets."
         )),
     }
@@ -446,11 +339,11 @@ mod tests {
             .try_get_matches_from(vec!["cp", "local/bucket", "https://example.com"])
             .unwrap();
         let dst = args
-            .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+            .get_one::<Resource>("DESTINATION_BUCKET_OR_FOLDER")
             .unwrap();
         assert!(matches!(
             dst,
-            CpPath::Instance(value)
+            Resource::Alias(value)
             if value == "https://example.com/"
         ));
 
@@ -467,15 +360,11 @@ mod tests {
                 "./tmp",
             ])
             .unwrap();
-        let src = args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap();
+        let src = args.get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER").unwrap();
         assert!(matches!(
             src,
-            CpPath::Bucket {
-                instance,
-                bucket,
-                entry_path,
-            }
-            if instance == "https://reductstore@play.reduct.store/replica/" && bucket == "datasets" && entry_path.is_none()
+            Resource::Resource(instance, bucket)
+            if instance == "https://reductstore@play.reduct.store/replica/" && bucket == "datasets"
         ));
     }
 
@@ -485,11 +374,11 @@ mod tests {
             .try_get_matches_from(vec!["cp", "local/bucket", "https://example.com/api/"])
             .unwrap();
         let dst = args
-            .get_one::<CpPath>("DESTINATION_BUCKET_OR_FOLDER")
+            .get_one::<Resource>("DESTINATION_BUCKET_OR_FOLDER")
             .unwrap();
         assert!(matches!(
             dst,
-            CpPath::Instance(value)
+            Resource::Alias(value)
             if value == "https://example.com/api/"
         ));
     }
@@ -499,14 +388,11 @@ mod tests {
         let args = cp_cmd()
             .try_get_matches_from(vec!["cp", "local/src/x/y", "./tmp"])
             .unwrap();
-        let src = args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap();
+        let src = args.get_one::<Resource>("SOURCE_BUCKET_OR_FOLDER").unwrap();
         assert!(matches!(
             src,
-            CpPath::Bucket {
-                instance,
-                bucket,
-                entry_path,
-            } if instance == "local" && bucket == "src" && entry_path.as_deref() == Some("x/y")
+            Resource::ResourceWithPath(instance, bucket, entry_path)
+            if instance == "local" && bucket == "src" && entry_path == "x/y"
         ));
     }
 

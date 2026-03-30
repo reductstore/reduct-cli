@@ -7,7 +7,7 @@ use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
-use crate::parse::ResourcePathParser;
+use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::ReplicationMode;
 
@@ -39,11 +39,13 @@ async fn set_replica_mode(
     action: &str,
 ) -> anyhow::Result<()> {
     let (alias_or_url, replication_name) = args
-        .get_one::<(String, String)>("REPLICATION_PATH")
-        .unwrap();
+        .get_one::<Resource>("REPLICATION_PATH")
+        .unwrap()
+        .clone()
+        .pair()?;
 
-    let client = build_client(ctx, alias_or_url).await?;
-    client.set_replication_mode(replication_name, mode).await?;
+    let client = build_client(ctx, &alias_or_url).await?;
+    client.set_replication_mode(&replication_name, mode).await?;
 
     output!(ctx, "Replication '{}' {}", replication_name, action);
     Ok(())
