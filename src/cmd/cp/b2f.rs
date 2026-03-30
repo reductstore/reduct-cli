@@ -158,9 +158,13 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
         ));
     }
 
-    let (src_instance, src_bucket) =
+    let (src_instance, src_bucket, source_entry_filter) =
         match args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap() {
-            CpPath::Bucket { instance, bucket } => (instance.clone(), bucket.clone()),
+            CpPath::Bucket {
+                instance,
+                bucket,
+                entry_path,
+            } => (instance.clone(), bucket.clone(), entry_path.clone()),
             CpPath::Folder(_) => {
                 return Err(anyhow::anyhow!(
                     "Expected a bucket source, but got a folder path"
@@ -189,7 +193,10 @@ pub(crate) async fn cp_bucket_to_folder(ctx: &CliContext, args: &ArgMatches) -> 
         }
     };
 
-    let query_params = parse_query_params(ctx, &args, Some(&src_instance))?;
+    let mut query_params = parse_query_params(ctx, &args, Some(&src_instance))?;
+    if let Some(entry_path) = source_entry_filter {
+        query_params.entry_filter.push(entry_path);
+    }
     let src_bucket = build_client(ctx, &src_instance)
         .await?
         .get_bucket(&src_bucket)

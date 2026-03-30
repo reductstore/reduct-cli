@@ -30,7 +30,11 @@ const CP_DEST_HELP: &str =
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum CpPath {
     Folder(String),
-    Bucket { instance: String, bucket: String },
+    Bucket {
+        instance: String,
+        bucket: String,
+        entry_path: Option<String>,
+    },
     Instance(String),
 }
 
@@ -82,19 +86,35 @@ impl TypedValueParser for CpPathParser {
                 return Ok(CpPath::Bucket {
                     instance: base_url.to_string(),
                     bucket: bucket.to_string(),
+                    entry_path: None,
                 });
             }
         }
 
-        if let Some((alias_or_url, resource_name)) = value.rsplit_once('/') {
-            if resource_name.is_empty() {
-                return Ok(CpPath::Instance(alias_or_url.to_string()));
+        if value.contains('/') {
+            let mut segments = value.split('/').filter(|segment| !segment.is_empty());
+            if let Some(instance) = segments.next() {
+                let bucket = segments.next();
+                let entry_segments: Vec<&str> = segments.collect();
+
+                if let Some(bucket) = bucket {
+                    let entry_path = if entry_segments.is_empty() {
+                        None
+                    } else {
+                        Some(entry_segments.join("/"))
+                    };
+                    return Ok(CpPath::Bucket {
+                        instance: instance.to_string(),
+                        bucket: bucket.to_string(),
+                        entry_path,
+                    });
+                }
+
+                return Ok(CpPath::Instance(instance.to_string()));
             }
-            Ok(CpPath::Bucket {
-                instance: alias_or_url.to_string(),
-                bucket: resource_name.to_string(),
-            })
-        } else if value.is_empty() {
+        }
+
+        if value.is_empty() {
             let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
             err.insert(
                 ContextKind::InvalidArg,
@@ -218,6 +238,7 @@ pub(crate) async fn cp_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
             CpPath::Bucket {
                 instance: src_instance,
                 bucket: src_bucket,
+                ..
             },
             CpPath::Instance(dst_instance),
         ) => {
@@ -304,6 +325,7 @@ async fn cp_all_buckets(
             &bucket.name,
             dst_instance,
             &bucket.name,
+            None,
         )
         .await?;
     }
@@ -345,6 +367,7 @@ async fn cp_matching_buckets(
             &bucket.name,
             dst_instance,
             &bucket.name,
+            None,
         )
         .await?;
     }
@@ -447,8 +470,12 @@ mod tests {
         let src = args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap();
         assert!(matches!(
             src,
-            CpPath::Bucket { instance, bucket }
-            if instance == "https://reductstore@play.reduct.store/replica/" && bucket == "datasets"
+            CpPath::Bucket {
+                instance,
+                bucket,
+                entry_path,
+            }
+            if instance == "https://reductstore@play.reduct.store/replica/" && bucket == "datasets" && entry_path.is_none()
         ));
     }
 
@@ -464,6 +491,22 @@ mod tests {
             dst,
             CpPath::Instance(value)
             if value == "https://example.com/api/"
+        ));
+    }
+
+    #[test]
+    fn alias_bucket_with_nested_entry_path_parses_bucket_and_entry() {
+        let args = cp_cmd()
+            .try_get_matches_from(vec!["cp", "local/src/x/y", "./tmp"])
+            .unwrap();
+        let src = args.get_one::<CpPath>("SOURCE_BUCKET_OR_FOLDER").unwrap();
+        assert!(matches!(
+            src,
+            CpPath::Bucket {
+                instance,
+                bucket,
+                entry_path,
+            } if instance == "local" && bucket == "src" && entry_path.as_deref() == Some("x/y")
         ));
     }
 
