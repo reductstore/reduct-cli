@@ -44,7 +44,10 @@ impl Resource {
 }
 
 #[derive(Clone)]
-pub(crate) struct ResourcePathParser {}
+pub(crate) struct ResourcePathParser {
+    allow_alias: bool,
+    allow_folder: bool,
+}
 
 impl TypedValueParser for ResourcePathParser {
     type Value = Resource;
@@ -58,7 +61,16 @@ impl TypedValueParser for ResourcePathParser {
         let value = value.to_string_lossy().to_string();
         let is_folder = [".", "/", ".."].iter().any(|s| value.starts_with(s));
         if is_folder {
-            return Ok(Resource::Folder(value));
+            if self.allow_folder {
+                return Ok(Resource::Folder(value));
+            }
+            let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+            err.insert(
+                ContextKind::InvalidArg,
+                ContextValue::String(arg.unwrap().to_string()),
+            );
+            err.insert(ContextKind::InvalidValue, ContextValue::String(value));
+            return Err(err);
         }
 
         if let Ok(mut url) = Url::parse(&value) {
@@ -80,7 +92,16 @@ impl TypedValueParser for ResourcePathParser {
                     .unwrap_or_default();
 
                 if segments.is_empty() || has_trailing_slash {
-                    return Ok(Resource::Alias(url.to_string()));
+                    if self.allow_alias {
+                        return Ok(Resource::Alias(url.to_string()));
+                    }
+                    let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                    err.insert(
+                        ContextKind::InvalidArg,
+                        ContextValue::String(arg.unwrap().to_string()),
+                    );
+                    err.insert(ContextKind::InvalidValue, ContextValue::String(value));
+                    return Err(err);
                 }
 
                 let resource = segments
@@ -113,7 +134,19 @@ impl TypedValueParser for ResourcePathParser {
                 err.insert(ContextKind::InvalidValue, ContextValue::String(value));
                 return Err(err);
             }
-            1 => Resource::Alias(segments[0].to_string()),
+            1 => {
+                if self.allow_alias {
+                    Resource::Alias(segments[0].to_string())
+                } else {
+                    let mut err = Error::new(ErrorKind::ValueValidation).with_cmd(cmd);
+                    err.insert(
+                        ContextKind::InvalidArg,
+                        ContextValue::String(arg.unwrap().to_string()),
+                    );
+                    err.insert(ContextKind::InvalidValue, ContextValue::String(value));
+                    return Err(err);
+                }
+            }
             2 => Resource::Resource(segments[0].to_string(), segments[1].to_string()),
             _ => Resource::ResourceWithPath(
                 segments[0].to_string(),
@@ -128,6 +161,19 @@ impl TypedValueParser for ResourcePathParser {
 
 impl ResourcePathParser {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            allow_alias: false,
+            allow_folder: false,
+        }
+    }
+
+    pub fn allow_alias(mut self) -> Self {
+        self.allow_alias = true;
+        self
+    }
+
+    pub fn allow_folder(mut self) -> Self {
+        self.allow_folder = true;
+        self
     }
 }

@@ -31,13 +31,13 @@ pub(crate) fn cp_cmd() -> Command {
         .arg(
             Arg::new("SOURCE_BUCKET_OR_FOLDER")
                 .help(CP_SOURCE_HELP)
-                .value_parser(ResourcePathParser::new())
+                .value_parser(ResourcePathParser::new().allow_alias().allow_folder())
                 .required(true),
         )
         .arg(
             Arg::new("DESTINATION_BUCKET_OR_FOLDER")
                 .help(CP_DEST_HELP)
-                .value_parser(ResourcePathParser::new())
+                .value_parser(ResourcePathParser::new().allow_alias().allow_folder())
                 .required(true),
         )
         .arg(
