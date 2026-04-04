@@ -8,6 +8,7 @@ use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
 use crate::parse::{Resource, ResourcePathParser};
+use chrono::SecondsFormat;
 
 use clap::{Arg, ArgMatches, Command};
 
@@ -38,13 +39,21 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
     output!(ctx, "Token: {}", token_name);
     output!(ctx, "Created: {}", token.created_at.date_naive());
     output!(ctx, "Provisioned: {}", bool_icon(token.is_provisioned));
-    output!(ctx, "Expired: {}", bool_icon(token.is_expired));
+    output!(
+        ctx,
+        "Status: {}",
+        if token.is_expired {
+            "❌ Expired"
+        } else {
+            "✅ Valid"
+        }
+    );
     output!(
         ctx,
         "Expires At: {}",
         token
             .expires_at
-            .map(|ts| ts.to_rfc3339())
+            .map(|ts| ts.to_rfc3339_opts(SecondsFormat::Secs, true))
             .unwrap_or("-".to_string())
     );
     output!(
@@ -60,7 +69,7 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
         "Last Access: {}",
         token
             .last_access
-            .map(|ts| ts.to_rfc3339())
+            .map(|ts| ts.to_rfc3339_opts(SecondsFormat::Secs, true))
             .unwrap_or("-".to_string())
     );
     output!(ctx, "IP Allowlist: {:?}", token.ip_allowlist);
@@ -100,7 +109,7 @@ mod tests {
         let created = history[1].strip_prefix("Created: ").unwrap();
         assert_eq!(created.len(), 10);
         assert_eq!(context.stdout().history()[2], "Provisioned: -");
-        assert_eq!(context.stdout().history()[3], "Expired: -");
+        assert_eq!(context.stdout().history()[3], "Status: ✅ Valid");
         assert_eq!(context.stdout().history()[4], "Expires At: -");
         assert_eq!(context.stdout().history()[5], "TTL: -");
         assert_eq!(context.stdout().history()[6], "Last Access: -");

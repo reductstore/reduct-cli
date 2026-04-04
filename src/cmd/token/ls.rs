@@ -7,6 +7,7 @@ use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::io::std::output;
+use chrono::{DateTime, SecondsFormat, Utc};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::TokenInfo;
@@ -57,8 +58,8 @@ struct TokenTable {
     name: String,
     #[tabled(rename = "Provisioned")]
     provisioned: String,
-    #[tabled(rename = "Expired")]
-    expired: String,
+    #[tabled(rename = "Status")]
+    status: String,
     #[tabled(rename = "Expires At (UTC)")]
     expires_at: String,
     #[tabled(rename = "TTL (s)")]
@@ -71,6 +72,9 @@ struct TokenTable {
 
 impl From<TokenInfo> for TokenTable {
     fn from(token: TokenInfo) -> Self {
+        let format_ts =
+            |ts: DateTime<Utc>| -> String { ts.to_rfc3339_opts(SecondsFormat::Secs, true) };
+
         Self {
             name: token.name,
             provisioned: if token.is_provisioned {
@@ -78,23 +82,17 @@ impl From<TokenInfo> for TokenTable {
             } else {
                 "-".to_string()
             },
-            expired: if token.is_expired {
-                "✓".to_string()
+            status: if token.is_expired {
+                "❌ Expired".to_string()
             } else {
-                "-".to_string()
+                "✅ Valid".to_string()
             },
-            expires_at: token
-                .expires_at
-                .map(|ts| ts.to_rfc3339())
-                .unwrap_or("-".to_string()),
+            expires_at: token.expires_at.map(format_ts).unwrap_or("-".to_string()),
             ttl: token
                 .ttl
                 .map(|ttl| ttl.to_string())
                 .unwrap_or("-".to_string()),
-            last_access: token
-                .last_access
-                .map(|ts| ts.to_rfc3339())
-                .unwrap_or("-".to_string()),
+            last_access: token.last_access.map(format_ts).unwrap_or("-".to_string()),
             ip_allowlist: if token.ip_allowlist.is_empty() {
                 "-".to_string()
             } else {
