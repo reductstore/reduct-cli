@@ -6,11 +6,13 @@
 mod create;
 mod ls;
 mod rm;
+mod rotate;
 mod show;
 
 use crate::cmd::token::create::create_token_cmd;
 use crate::cmd::token::ls::ls_tokens_cmd;
 use crate::cmd::token::rm::rm_token_cmd;
+use crate::cmd::token::rotate::rotate_token_cmd;
 use crate::cmd::token::show::{show_token, show_token_cmd};
 use crate::context::CliContext;
 use clap::Command;
@@ -21,6 +23,7 @@ pub(crate) fn token_cmd() -> Command {
         .arg_required_else_help(true)
         .subcommand(create_token_cmd())
         .subcommand(ls_tokens_cmd())
+        .subcommand(rotate_token_cmd())
         .subcommand(show_token_cmd())
         .subcommand(rm_token_cmd())
 }
@@ -33,6 +36,7 @@ pub(crate) async fn token_handler(
         Some(("create", args)) => create::create_token(ctx, args).await?,
         Some(("show", args)) => show_token(ctx, args).await?,
         Some(("ls", args)) => ls::ls_tokens(ctx, args).await?,
+        Some(("rotate", args)) => rotate::rotate_token(ctx, args).await?,
         Some(("rm", args)) => rm::rm_token(ctx, args).await?,
         _ => (),
     }

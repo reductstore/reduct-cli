@@ -65,7 +65,6 @@ pub(super) async fn rm_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cmd::token::create::create_token_cmd;
     use crate::context::tests::{context, token};
     use reduct_rs::ErrorCode;
     use rstest::*;
@@ -95,8 +94,8 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_rm_token_bad_path() {
-        let cmd = create_token_cmd();
-        let args = cmd.try_get_matches_from(vec!["create", "test"]);
+        let cmd = rm_token_cmd();
+        let args = cmd.try_get_matches_from(vec!["rm", "test"]);
         assert_eq!(args.unwrap_err().to_string(), "error: invalid value 'test' for '<TOKEN_PATH>'\n\nFor more information, try '--help'.\n");
     }
 }
