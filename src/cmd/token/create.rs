@@ -265,6 +265,7 @@ mod tests {
     #[case("1")]
     #[case("xh")]
     #[case("10w")]
+    #[case("1y")]
     fn test_parse_simple_duration_err(#[case] input: &str) {
         assert!(parse_simple_duration(input).is_err());
     }
