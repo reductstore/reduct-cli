@@ -10,7 +10,7 @@ use crate::io::std::output;
 use chrono::{DateTime, SecondsFormat, Utc};
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::TokenInfo;
+use reduct_rs::Token;
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -36,7 +36,7 @@ pub(super) async fn ls_tokens(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
     let alias_or_url = args.get_one::<String>("ALIAS_OR_URL").unwrap();
     let client = build_client(ctx, alias_or_url).await?;
 
-    let token_list = client.list_tokens_info().await?;
+    let token_list = client.list_tokens().await?;
     if args.get_flag("full") {
         print_full_list(ctx, token_list);
     } else {
@@ -46,7 +46,7 @@ pub(super) async fn ls_tokens(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
     Ok(())
 }
 
-fn print_list(ctx: &CliContext, token_list: Vec<TokenInfo>) {
+fn print_list(ctx: &CliContext, token_list: Vec<Token>) {
     for token in token_list {
         output!(ctx, "{}", token.name);
     }
@@ -70,8 +70,8 @@ struct TokenTable {
     ip_allowlist: String,
 }
 
-impl From<TokenInfo> for TokenTable {
-    fn from(token: TokenInfo) -> Self {
+impl From<Token> for TokenTable {
+    fn from(token: Token) -> Self {
         let format_ts =
             |ts: DateTime<Utc>| -> String { ts.to_rfc3339_opts(SecondsFormat::Secs, true) };
 
@@ -102,7 +102,7 @@ impl From<TokenInfo> for TokenTable {
     }
 }
 
-fn print_full_list(ctx: &CliContext, token_list: Vec<TokenInfo>) {
+fn print_full_list(ctx: &CliContext, token_list: Vec<Token>) {
     if token_list.is_empty() {
         return;
     }
@@ -148,7 +148,7 @@ mod tests {
             .create_token(&token, Permissions::default())
             .await
             .unwrap();
-        let token_list = client.list_tokens_info().await.unwrap();
+        let token_list = client.list_tokens().await.unwrap();
 
         let args = ls_tokens_cmd().get_matches_from(vec!["ls", "local", "--full"]);
         ls_tokens(&context, &args).await.unwrap();
