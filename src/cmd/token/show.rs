@@ -32,7 +32,7 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
         .pair()?;
 
     let client = build_client(ctx, &alias_or_url).await?;
-    let token = client.get_token_info(&token_name).await?;
+    let token = client.get_token(&token_name).await?;
 
     let bool_icon = |value: bool| if value { "✓" } else { "-" };
 

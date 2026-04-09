@@ -11,7 +11,8 @@ use crate::parse::{Resource, ResourcePathParser};
 use chrono::{DateTime, Utc};
 use clap::ArgAction::{Append, SetTrue};
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::{Permissions, ReductClient, TokenCreateOptions};
+use reduct_rs::{Permissions, ReductClient};
+use std::time::Duration;
 
 fn parse_simple_duration(input: &str) -> anyhow::Result<u64> {
     if input.len() < 2 {
@@ -80,11 +81,9 @@ pub(super) fn create_token_cmd() -> Command {
         .arg(
             Arg::new("ttl")
                 .long("ttl")
-                .value_name("SECONDS")
-                .value_parser(clap::value_parser!(u64))
-                .help("Time to live in seconds")
-                .required(false)
-                .conflicts_with("expires-at"),
+                .value_name("DURATION")
+                .help("Inactivity TTL duration (e.g. 1h, 2d, 30m)")
+                .required(false),
         )
         .arg(
             Arg::new("expires-at")
@@ -92,7 +91,7 @@ pub(super) fn create_token_cmd() -> Command {
                 .value_name("RFC3339")
                 .help("Expiration date in RFC3339 format (e.g. 2026-04-05T12:00:00Z)")
                 .required(false)
-                .conflicts_with_all(["ttl", "expires-in"]),
+                .conflicts_with("expires-in"),
         )
         .arg(
             Arg::new("expires-in")
@@ -100,7 +99,7 @@ pub(super) fn create_token_cmd() -> Command {
                 .value_name("DURATION")
                 .help("Relative expiry duration (e.g. 1h, 2d, 30m)")
                 .required(false)
-                .conflicts_with_all(["ttl", "expires-at"]),
+                .conflicts_with("expires-at"),
         )
         .arg(
             Arg::new("ip-allow")
@@ -130,7 +129,14 @@ pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
         .unwrap_or_default()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
-    let ttl = args.get_one::<u64>("ttl").copied();
+    let ttl = args
+        .get_one::<String>("ttl")
+        .map(|value| {
+            parse_simple_duration(value)
+                .map(Duration::from_secs)
+                .map_err(|e| anyhow::anyhow!("invalid --ttl '{}': {}", value, e))
+        })
+        .transpose()?;
     let expires_at = args
         .get_one::<String>("expires-at")
         .map(|expires_at| {
@@ -160,21 +166,26 @@ pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
         .collect::<Vec<String>>();
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
-    let token = client
-        .create_token_with_options(
-            &token_name,
-            TokenCreateOptions {
-                permissions: Permissions {
-                    full_access,
-                    read: read_buckets,
-                    write: write_buckets,
-                },
-                expires_at,
-                ttl,
-                ip_allowlist,
-            },
-        )
-        .await?;
+    let permissions = Permissions {
+        full_access,
+        read: read_buckets,
+        write: write_buckets,
+    };
+
+    let mut create_token = client
+        .create_token_builder(&token_name)
+        .permissions(permissions)
+        .ip_allowlist(ip_allowlist);
+
+    if let Some(expires_at) = expires_at {
+        create_token = create_token.expires_at(expires_at);
+    }
+
+    if let Some(ttl) = ttl {
+        create_token = create_token.ttl(ttl);
+    }
+
+    let token = create_token.send().await?;
 
     output!(ctx, "Token '{}' created: {}", token_name, token.value);
     Ok(())
@@ -195,7 +206,7 @@ mod tests {
                 format!("local/{}", token.await).as_str(),
                 "--full-access",
                 "--ttl",
-                "60",
+                "60s",
                 "--ip-allow",
                 "127.0.0.1",
                 "--read-bucket",
@@ -218,21 +229,26 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_token_ttl_expires_conflict() {
+    fn test_create_token_ttl_and_expires_at_allowed() {
         let cmd = create_token_cmd();
-        let err = cmd
+        let args = cmd
             .try_get_matches_from(vec![
                 "create",
                 "local/test_token",
                 "--ttl",
-                "60",
+                "60s",
                 "--expires-at",
                 "2026-04-05T12:00:00Z",
             ])
-            .unwrap_err();
-        assert!(err
-            .to_string()
-            .contains("cannot be used with '--expires-at <RFC3339>'"));
+            .unwrap();
+        assert_eq!(
+            args.get_one::<String>("ttl").map(String::as_str),
+            Some("60s")
+        );
+        assert_eq!(
+            args.get_one::<String>("expires-at").map(String::as_str),
+            Some("2026-04-05T12:00:00Z")
+        );
     }
 
     #[rstest]
@@ -254,14 +270,37 @@ mod tests {
     }
 
     #[rstest]
-    fn test_create_token_expires_in_conflicts_with_ttl() {
+    fn test_create_token_ttl_and_expires_in_allowed() {
+        let cmd = create_token_cmd();
+        let args = cmd
+            .try_get_matches_from(vec![
+                "create",
+                "local/test_token",
+                "--ttl",
+                "60s",
+                "--expires-in",
+                "1h",
+            ])
+            .unwrap();
+        assert_eq!(
+            args.get_one::<String>("ttl").map(String::as_str),
+            Some("60s")
+        );
+        assert_eq!(
+            args.get_one::<String>("expires-in").map(String::as_str),
+            Some("1h")
+        );
+    }
+
+    #[rstest]
+    fn test_create_token_expires_in_conflicts_with_expires_at() {
         let cmd = create_token_cmd();
         let err = cmd
             .try_get_matches_from(vec![
                 "create",
                 "local/test_token",
-                "--ttl",
-                "60",
+                "--expires-at",
+                "2026-04-05T12:00:00Z",
                 "--expires-in",
                 "1h",
             ])
