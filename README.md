@@ -25,6 +25,12 @@ blob data.
 cargo install reduct-cli
 ```
 
+### From Snap
+
+```bash
+sudo snap install reduct-cli
+```
+
 ### From pre-built binaries
 
 You can also install `reduct-cli` from the latest release binaries.
