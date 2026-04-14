@@ -266,7 +266,7 @@ jobs:
       - name: Publish snap package
         uses: snapcore/action-publish@master
         env:
-          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_LOGIN }}
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         with:
           snap: ${{ env.SNAP_NAME }}
           release: ${{ startsWith(github.ref, 'refs/tags/') && 'stable' || 'edge' }}
