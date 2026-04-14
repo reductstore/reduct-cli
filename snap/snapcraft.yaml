@@ -1,0 +1,41 @@
+title: Reduct CLI
+name: reduct-cli
+base: core24
+version: git
+summary: Command-line client for ReductStore
+
+description: |
+  Reduct CLI is the official command-line client for ReductStore.
+  Use it to manage buckets, tokens, and replication, inspect server health,
+  and copy or mirror time-series blob data between local paths and ReductStore instances.
+
+contact: info@reduct.store
+issues: https://github.com/reductstore/reduct-cli/issues
+source-code: https://github.com/reductstore/reduct-cli
+website: https://www.reduct.store
+license: MPL-2.0
+confinement: strict
+grade: stable
+
+platforms:
+  amd64:
+    build-on: [amd64]
+    build-for: [amd64]
+  arm64:
+    build-on: [amd64]
+    build-for: [arm64]
+
+parts:
+  reduct-cli:
+    plugin: dump
+    source: .snap-build/bin
+    organize:
+      reduct-cli: bin/reduct-cli
+
+apps:
+  reduct-cli:
+    command: bin/reduct-cli
+    plugs:
+      - network
+      - home
+      - removable-media

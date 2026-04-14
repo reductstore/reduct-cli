@@ -245,3 +245,28 @@ jobs:
           asset_path: /tmp/reduct-cli.${{ matrix.target }}.zip
           asset_name: reduct-cli.${{ matrix.target }}.zip
           asset_content_type: application/zip
+
+  snap_release:
+    name: Build and Publish Snap Package
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [ amd64, arm64 ]
+    needs:
+      - build
+      - cli_tests
+      - check_tag
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/snap-release
+        with:
+          arch: ${{ matrix.arch }}
+
+      - name: Publish snap package
+        uses: snapcore/action-publish@master
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_LOGIN }}
+        with:
+          snap: ${{ env.SNAP_NAME }}
+          release: ${{ startsWith(github.ref, 'refs/tags/') && 'stable' || 'edge' }}
