@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add Snap package metadata and CI publish workflow for amd64/arm64 builds, [PR-204](https://github.com/reductstore/reduct-cli/pull/204)
+
 ## 0.11.0 - 2026-04-09
 
 ### Added
