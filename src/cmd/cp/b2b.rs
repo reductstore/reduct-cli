@@ -39,9 +39,7 @@ impl CopyVisitor for CopyToBucketVisitor {
                 .send()
                 .await;
             if let Err(err) = res {
-                if err.status() != ErrorCode::Conflict {
-                    result.insert(timestamp, err);
-                }
+                result.insert(timestamp, err);
             }
 
             Ok(result)
@@ -52,12 +50,7 @@ impl CopyVisitor for CopyToBucketVisitor {
                 .add_records(records)
                 .send()
                 .await?;
-            let errors: BTreeMap<u64, ReductError> = errors
-                .into_iter()
-                .filter(|(_, err)| err.status() != ErrorCode::Conflict)
-                .collect();
-
-            Ok(errors)
+            Ok(errors.into_iter().collect())
         }
     }
 

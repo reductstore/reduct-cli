@@ -84,8 +84,11 @@ pub(super) struct BucketProgress {
     total_entries: usize,
     progress_metric: ProgressMetric,
     entry_stats: HashMap<String, (u64, u64)>,
+    skipped_by_entry: HashMap<String, u64>,
+    failed_by_entry: HashMap<String, String>,
     transferred_bytes: u64,
     record_count: u64,
+    skipped_count: u64,
     speed: u64,
     history: Vec<(u64, Instant)>,
     speed_update: Instant,
@@ -94,6 +97,14 @@ pub(super) struct BucketProgress {
 }
 
 impl BucketProgress {
+    fn track_displayed_entry(&mut self, entry_name: &str) {
+        if self.displayed_entries.len() < self.display_limit
+            && !self.displayed_entries.iter().any(|name| name == entry_name)
+        {
+            self.displayed_entries.push(entry_name.to_string());
+        }
+    }
+
     fn new(
         bucket_name: String,
         display_limit: usize,
@@ -111,8 +122,11 @@ impl BucketProgress {
             total_entries,
             progress_metric,
             entry_stats: HashMap::new(),
+            skipped_by_entry: HashMap::new(),
+            failed_by_entry: HashMap::new(),
             transferred_bytes: 0,
             record_count: 0,
+            skipped_count: 0,
             speed: 0,
             history: Vec::new(),
             speed_update: Instant::now(),
@@ -139,11 +153,8 @@ impl BucketProgress {
         let was_empty = entry_stats.0 == 0;
         entry_stats.0 = entry_stats.0.saturating_add(1);
         entry_stats.1 = entry_stats.1.saturating_add(content_length);
-        if was_empty
-            && self.displayed_entries.len() < self.display_limit
-            && !self.displayed_entries.iter().any(|name| name == entry_name)
-        {
-            self.displayed_entries.push(entry_name.to_string());
+        if was_empty {
+            self.track_displayed_entry(entry_name);
         }
 
         let duration = self.history[0].1.elapsed().as_secs();
@@ -167,6 +178,29 @@ impl BucketProgress {
         }
     }
 
+    pub(super) fn skip(&mut self, entry_name: &str) {
+        self.skipped_count = self.skipped_count.saturating_add(1);
+        *self
+            .skipped_by_entry
+            .entry(entry_name.to_string())
+            .or_insert(0) += 1;
+        self.track_displayed_entry(entry_name);
+
+        if !self.quiet {
+            self.progress_bar.set_message(self.message());
+        }
+    }
+
+    pub(super) fn fail_entry(&mut self, entry_name: &str, error: &str) {
+        self.track_displayed_entry(entry_name);
+        self.failed_by_entry
+            .insert(entry_name.to_string(), error.to_string());
+
+        if !self.quiet {
+            self.progress_bar.set_message(self.message());
+        }
+    }
+
     pub(crate) fn print_warning(&self, warning: String) {
         if !self.quiet {
             self.progress_bar
@@ -177,51 +211,49 @@ impl BucketProgress {
     pub(crate) fn done(&self) {
         if !self.quiet {
             self.progress_bar.set_position(self.progress_metric.total());
+            let copied = if self.skipped_count > 0 {
+                format!("{} (skipped {})", self.record_count, self.skipped_count)
+            } else {
+                format!("{}", self.record_count)
+            };
             let msg = format!(
-                "Copied {} records from bucket '{}' ({}, {}/s)\n{}",
-                self.record_count,
-                self.bucket_name,
+                "Copied {} records ({}) from bucket '{}' ({}/s)\n{}",
+                copied,
                 ByteSize::b(self.transferred_bytes),
+                self.bucket_name,
                 ByteSize::b(self.speed),
                 self.entry_tree()
             );
             self.progress_bar.set_message(msg);
             self.progress_bar.abandon();
         } else {
+            let copied = if self.skipped_count > 0 {
+                format!("{} (skipped {})", self.record_count, self.skipped_count)
+            } else {
+                format!("{}", self.record_count)
+            };
             let msg = format!(
-                "Copied {} records from bucket '{}' ({})",
-                self.record_count,
-                self.bucket_name,
-                ByteSize::b(self.transferred_bytes)
+                "Copied {} records ({}) from bucket '{}'",
+                copied,
+                ByteSize::b(self.transferred_bytes),
+                self.bucket_name
             );
             println!("{}", msg);
         }
     }
 
-    pub(crate) fn all_failed(&self) {
-        if !self.quiet {
-            let msg = format!(
-                "Failed to copy any entries from bucket '{}'\n{}",
-                self.bucket_name,
-                self.entry_tree()
-            );
-            self.progress_bar.set_message(msg);
-            self.progress_bar.abandon();
-        } else {
-            let msg = format!(
-                "Failed to copy any entries from bucket '{}'",
-                self.bucket_name
-            );
-            eprintln!("{}", msg);
-        }
-    }
-
     fn message(&self) -> String {
+        let copied = if self.skipped_count > 0 {
+            format!("{} (skipped {})", self.record_count, self.skipped_count)
+        } else {
+            format!("{}", self.record_count)
+        };
+
         format!(
-            "Copying {} records from bucket '{}' ({}, {}/s)\n{}",
-            self.record_count,
-            self.bucket_name,
+            "Copying {} records ({}) from bucket '{}' ({}/s)\n{}",
+            copied,
             ByteSize::b(self.transferred_bytes),
+            self.bucket_name,
             ByteSize::b(self.speed),
             self.entry_tree()
         )
@@ -245,13 +277,27 @@ impl BucketProgress {
                 "├─ "
             };
             let (records, bytes) = self.entry_stats.get(entry).copied().unwrap_or((0, 0));
-            lines.push(format!(
-                "  {}{} (🧷 {}, 📦 {})",
-                prefix,
-                entry,
-                records,
-                ByteSize::b(bytes)
-            ));
+            let skipped = self.skipped_by_entry.get(entry).copied().unwrap_or(0);
+            if let Some(err) = self.failed_by_entry.get(entry) {
+                lines.push(format!(
+                    "  {}{} (🧷 {}, 📦 {}, ⏭️ {}, ❌ {})",
+                    prefix,
+                    entry,
+                    records,
+                    ByteSize::b(bytes),
+                    skipped,
+                    err
+                ));
+            } else {
+                lines.push(format!(
+                    "  {}{} (🧷 {}, 📦 {}, ⏭️ {})",
+                    prefix,
+                    entry,
+                    records,
+                    ByteSize::b(bytes),
+                    skipped
+                ));
+            }
         }
         if self.total_entries > self.displayed_entries.len() {
             lines.push(format!(
@@ -400,24 +446,50 @@ where
                 completed_entries += 1;
                 if let Err(err) = outcome.result {
                     failed_entries += 1;
-                    eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
+                    let mut progress = bucket_progress.lock().await;
+                    progress.fail_entry(&outcome.entry_name, &err.to_string());
+                    if quiet {
+                        eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
+                    } else {
+                        progress.print_warning(format!(
+                            "Failed to copy entry '{}': {}",
+                            outcome.entry_name, err
+                        ));
+                    }
                 }
             }
             Err(err) => {
                 failed_entries += 1;
                 completed_entries += 1;
-                eprintln!("Failed to copy entry: {}", err);
+                let progress = bucket_progress.lock().await;
+                if quiet {
+                    eprintln!("Failed to copy entry: {}", err);
+                } else {
+                    progress.print_warning(format!("Failed to copy entry: {}", err));
+                }
             }
         }
     }
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
-        progress_guard.all_failed();
-        return Err(anyhow::anyhow!(
+        let msg = format!(
             "Failed to copy any entries from bucket '{}'",
             progress_guard.bucket_name
-        ));
+        );
+
+        if quiet {
+            eprintln!("{}", msg);
+            eprintln!("{}", progress_guard.entry_tree());
+        } else {
+            progress_guard.progress_bar.set_message(format!(
+                "{}\n{}",
+                msg,
+                progress_guard.entry_tree()
+            ));
+            progress_guard.progress_bar.abandon();
+        }
+        return Err(anyhow::anyhow!(msg));
     }
 
     progress_guard.done();
@@ -701,7 +773,13 @@ async fn copy_entry_attachments_once<V: CopyVisitor + Sync + ?Sized>(
 
     let attachments = match src_bucket.read_attachments(entry_name).await {
         Ok(attachments) => attachments,
-        Err(err) if err.status() == ErrorCode::NotFound => HashMap::<String, Value>::new(),
+        Err(err)
+            if err.status() == ErrorCode::NotFound
+                || err.status() == ErrorCode::MethodNotAllowed =>
+        {
+            // Older ReductStore versions may not support attachments endpoints.
+            HashMap::<String, Value>::new()
+        }
         Err(err) => return Err(err),
     };
 
@@ -734,18 +812,31 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
         .collect::<Vec<_>>();
     let taken_records = std::mem::take(batch);
     let errors = visitor.copy_records(entry_name, taken_records).await?;
-    if let Some((_, err)) = errors.into_iter().next() {
-        return Err(err);
-    }
+    let mut first_error: Option<ReductError> = None;
 
     for (ts, len) in batch_info {
-        *record_count += 1;
         *timestamp = ts;
+
+        if let Some(err) = errors.get(&ts) {
+            if err.status() == ErrorCode::Conflict {
+                let mut progress = bucket_progress.lock().await;
+                progress.skip(entry_name);
+            } else if first_error.is_none() {
+                first_error = Some(err.clone());
+            }
+            continue;
+        }
+
+        *record_count += 1;
         {
             let mut progress = bucket_progress.lock().await;
             progress.update(entry_name, ts, len);
         }
         sleep(Duration::from_micros(5)).await;
+    }
+
+    if let Some(err) = first_error {
+        return Err(err);
     }
 
     *attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
@@ -944,6 +1035,45 @@ mod tests {
 
             bucket_progress.update("entry-1", 1000, 10);
             assert_eq!(bucket_progress.progress_bar.position(), 100);
+        }
+
+        #[test]
+        fn test_message_shows_skipped_only_when_non_zero() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                1,
+                1,
+                ProgressMetric::Records { total: 10 },
+                &progress,
+                false,
+            );
+
+            bucket_progress.update("entry-1", 1, 10);
+            let msg = bucket_progress.message();
+            assert!(msg.contains("Copying 1 records (10 B) from bucket 'test'"));
+            assert!(!msg.contains("skipped"));
+
+            bucket_progress.skip("entry-1");
+            let msg = bucket_progress.message();
+            assert!(msg.contains("Copying 1 (skipped 1) records (10 B) from bucket 'test'"));
+        }
+
+        #[test]
+        fn test_entry_tree_shows_failure_for_entries_without_copied_records() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                3,
+                3,
+                ProgressMetric::Records { total: 10 },
+                &progress,
+                false,
+            );
+
+            bucket_progress.fail_entry("imdb", "[MethodNotAllowed] Unknown");
+            let tree = bucket_progress.entry_tree();
+            assert!(tree.contains("imdb (🧷 0, 📦 0 B, ⏭️ 0, ❌ [MethodNotAllowed] Unknown)"));
         }
     }
 
