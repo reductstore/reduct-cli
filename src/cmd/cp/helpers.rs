@@ -216,6 +216,25 @@ impl BucketProgress {
         }
     }
 
+    pub(crate) fn all_failed_after_partial_copy(&self) {
+        if !self.quiet {
+            let msg = format!(
+                "All entries ended with errors after copying {} records from bucket '{}'\n{}",
+                self.record_count,
+                self.bucket_name,
+                self.entry_tree()
+            );
+            self.progress_bar.set_message(msg);
+            self.progress_bar.abandon();
+        } else {
+            let msg = format!(
+                "All entries ended with errors after copying {} records from bucket '{}'",
+                self.record_count, self.bucket_name
+            );
+            eprintln!("{}", msg);
+        }
+    }
+
     fn message(&self) -> String {
         format!(
             "Copying {} records from bucket '{}' ({}, {}/s)\n{}",
@@ -413,6 +432,15 @@ where
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
+        if progress_guard.record_count > 0 {
+            progress_guard.all_failed_after_partial_copy();
+            return Err(anyhow::anyhow!(
+                "All entries ended with errors after copying {} records from bucket '{}'",
+                progress_guard.record_count,
+                progress_guard.bucket_name
+            ));
+        }
+
         progress_guard.all_failed();
         return Err(anyhow::anyhow!(
             "Failed to copy any entries from bucket '{}'",
