@@ -1036,6 +1036,45 @@ mod tests {
             bucket_progress.update("entry-1", 1000, 10);
             assert_eq!(bucket_progress.progress_bar.position(), 100);
         }
+
+        #[test]
+        fn test_message_shows_skipped_only_when_non_zero() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                1,
+                1,
+                ProgressMetric::Records { total: 10 },
+                &progress,
+                false,
+            );
+
+            bucket_progress.update("entry-1", 1, 10);
+            let msg = bucket_progress.message();
+            assert!(msg.contains("Copying 1 records (10 B) from bucket 'test'"));
+            assert!(!msg.contains("skipped"));
+
+            bucket_progress.skip("entry-1");
+            let msg = bucket_progress.message();
+            assert!(msg.contains("Copying 1 (skipped 1) records (10 B) from bucket 'test'"));
+        }
+
+        #[test]
+        fn test_entry_tree_shows_failure_for_entries_without_copied_records() {
+            let progress = MultiProgress::new();
+            let mut bucket_progress = BucketProgress::new(
+                "test".to_string(),
+                3,
+                3,
+                ProgressMetric::Records { total: 10 },
+                &progress,
+                false,
+            );
+
+            bucket_progress.fail_entry("imdb", "[MethodNotAllowed] Unknown");
+            let tree = bucket_progress.entry_tree();
+            assert!(tree.contains("imdb (🧷 0, 📦 0 B, ⏭️ 0, ❌ [MethodNotAllowed] Unknown)"));
+        }
     }
 
     mod downloading {
