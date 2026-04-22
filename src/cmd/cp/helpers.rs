@@ -85,6 +85,7 @@ pub(super) struct BucketProgress {
     progress_metric: ProgressMetric,
     entry_stats: HashMap<String, (u64, u64)>,
     skipped_by_entry: HashMap<String, u64>,
+    failed_by_entry: HashMap<String, String>,
     transferred_bytes: u64,
     record_count: u64,
     skipped_count: u64,
@@ -122,6 +123,7 @@ impl BucketProgress {
             progress_metric,
             entry_stats: HashMap::new(),
             skipped_by_entry: HashMap::new(),
+            failed_by_entry: HashMap::new(),
             transferred_bytes: 0,
             record_count: 0,
             skipped_count: 0,
@@ -183,6 +185,16 @@ impl BucketProgress {
             .entry(entry_name.to_string())
             .or_insert(0) += 1;
         self.track_displayed_entry(entry_name);
+
+        if !self.quiet {
+            self.progress_bar.set_message(self.message());
+        }
+    }
+
+    pub(super) fn fail_entry(&mut self, entry_name: &str, error: &str) {
+        self.track_displayed_entry(entry_name);
+        self.failed_by_entry
+            .insert(entry_name.to_string(), error.to_string());
 
         if !self.quiet {
             self.progress_bar.set_message(self.message());
@@ -253,14 +265,26 @@ impl BucketProgress {
             };
             let (records, bytes) = self.entry_stats.get(entry).copied().unwrap_or((0, 0));
             let skipped = self.skipped_by_entry.get(entry).copied().unwrap_or(0);
-            lines.push(format!(
-                "  {}{} (🧷 {}, 📦 {}, ⏭️ {})",
-                prefix,
-                entry,
-                records,
-                ByteSize::b(bytes),
-                skipped
-            ));
+            if let Some(err) = self.failed_by_entry.get(entry) {
+                lines.push(format!(
+                    "  {}{} (🧷 {}, 📦 {}, ⏭️ {}, ❌ {})",
+                    prefix,
+                    entry,
+                    records,
+                    ByteSize::b(bytes),
+                    skipped,
+                    err
+                ));
+            } else {
+                lines.push(format!(
+                    "  {}{} (🧷 {}, 📦 {}, ⏭️ {})",
+                    prefix,
+                    entry,
+                    records,
+                    ByteSize::b(bytes),
+                    skipped
+                ));
+            }
         }
         if self.total_entries > self.displayed_entries.len() {
             lines.push(format!(
@@ -403,16 +427,14 @@ where
 
     let mut failed_entries = 0usize;
     let mut completed_entries = 0usize;
-    let mut failure_reasons: Vec<String> = Vec::new();
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok(outcome) => {
                 completed_entries += 1;
                 if let Err(err) = outcome.result {
                     failed_entries += 1;
-                    let reason = format!("{}: {}", outcome.entry_name, err);
-                    failure_reasons.push(reason.clone());
-                    let progress = bucket_progress.lock().await;
+                    let mut progress = bucket_progress.lock().await;
+                    progress.fail_entry(&outcome.entry_name, &err.to_string());
                     if quiet {
                         eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
                     } else {
@@ -426,7 +448,6 @@ where
             Err(err) => {
                 failed_entries += 1;
                 completed_entries += 1;
-                failure_reasons.push(format!("task join error: {}", err));
                 let progress = bucket_progress.lock().await;
                 if quiet {
                     eprintln!("Failed to copy entry: {}", err);
@@ -439,22 +460,14 @@ where
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
-        let mut msg = format!(
+        let msg = format!(
             "Failed to copy any entries from bucket '{}'",
             progress_guard.bucket_name
         );
-        if !failure_reasons.is_empty() {
-            let details = failure_reasons
-                .iter()
-                .take(3)
-                .map(|reason| format!("- {}", reason))
-                .collect::<Vec<_>>()
-                .join("\n");
-            msg = format!("{}\nReasons:\n{}", msg, details);
-        }
 
         if quiet {
             eprintln!("{}", msg);
+            eprintln!("{}", progress_guard.entry_tree());
         } else {
             progress_guard.progress_bar.set_message(format!(
                 "{}\n{}",
