@@ -427,13 +427,26 @@ where
                 completed_entries += 1;
                 if let Err(err) = outcome.result {
                     failed_entries += 1;
-                    eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
+                    let progress = bucket_progress.lock().await;
+                    if quiet {
+                        eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
+                    } else {
+                        progress.print_warning(format!(
+                            "Failed to copy entry '{}': {}",
+                            outcome.entry_name, err
+                        ));
+                    }
                 }
             }
             Err(err) => {
                 failed_entries += 1;
                 completed_entries += 1;
-                eprintln!("Failed to copy entry: {}", err);
+                let progress = bucket_progress.lock().await;
+                if quiet {
+                    eprintln!("Failed to copy entry: {}", err);
+                } else {
+                    progress.print_warning(format!("Failed to copy entry: {}", err));
+                }
             }
         }
     }
