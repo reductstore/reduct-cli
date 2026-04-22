@@ -403,12 +403,15 @@ where
 
     let mut failed_entries = 0usize;
     let mut completed_entries = 0usize;
+    let mut failure_reasons: Vec<String> = Vec::new();
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok(outcome) => {
                 completed_entries += 1;
                 if let Err(err) = outcome.result {
                     failed_entries += 1;
+                    let reason = format!("{}: {}", outcome.entry_name, err);
+                    failure_reasons.push(reason.clone());
                     let progress = bucket_progress.lock().await;
                     if quiet {
                         eprintln!("Failed to copy entry '{}': {}", outcome.entry_name, err);
@@ -423,6 +426,7 @@ where
             Err(err) => {
                 failed_entries += 1;
                 completed_entries += 1;
+                failure_reasons.push(format!("task join error: {}", err));
                 let progress = bucket_progress.lock().await;
                 if quiet {
                     eprintln!("Failed to copy entry: {}", err);
@@ -435,10 +439,20 @@ where
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
-        let msg = format!(
+        let mut msg = format!(
             "Failed to copy any entries from bucket '{}'",
             progress_guard.bucket_name
         );
+        if !failure_reasons.is_empty() {
+            let details = failure_reasons
+                .iter()
+                .take(3)
+                .map(|reason| format!("- {}", reason))
+                .collect::<Vec<_>>()
+                .join("\n");
+            msg = format!("{}\nReasons:\n{}", msg, details);
+        }
+
         if quiet {
             eprintln!("{}", msg);
         } else {
