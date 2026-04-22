@@ -85,7 +85,9 @@ pub(super) struct BucketProgress {
     progress_metric: ProgressMetric,
     entry_stats: HashMap<String, (u64, u64)>,
     transferred_bytes: u64,
+    skipped_bytes: u64,
     record_count: u64,
+    skipped_count: u64,
     speed: u64,
     history: Vec<(u64, Instant)>,
     speed_update: Instant,
@@ -112,7 +114,9 @@ impl BucketProgress {
             progress_metric,
             entry_stats: HashMap::new(),
             transferred_bytes: 0,
+            skipped_bytes: 0,
             record_count: 0,
+            skipped_count: 0,
             speed: 0,
             history: Vec::new(),
             speed_update: Instant::now(),
@@ -167,6 +171,15 @@ impl BucketProgress {
         }
     }
 
+    pub(super) fn skip(&mut self, content_length: u64) {
+        self.skipped_bytes = self.skipped_bytes.saturating_add(content_length);
+        self.skipped_count = self.skipped_count.saturating_add(1);
+
+        if !self.quiet {
+            self.progress_bar.set_message(self.message());
+        }
+    }
+
     pub(crate) fn print_warning(&self, warning: String) {
         if !self.quiet {
             self.progress_bar
@@ -178,10 +191,12 @@ impl BucketProgress {
         if !self.quiet {
             self.progress_bar.set_position(self.progress_metric.total());
             let msg = format!(
-                "Copied {} records from bucket '{}' ({}, {}/s)\n{}",
+                "Copied {} records ({}), skipped {} records ({}) from bucket '{}' ({}/s)\n{}",
                 self.record_count,
-                self.bucket_name,
                 ByteSize::b(self.transferred_bytes),
+                self.skipped_count,
+                ByteSize::b(self.skipped_bytes),
+                self.bucket_name,
                 ByteSize::b(self.speed),
                 self.entry_tree()
             );
@@ -189,10 +204,12 @@ impl BucketProgress {
             self.progress_bar.abandon();
         } else {
             let msg = format!(
-                "Copied {} records from bucket '{}' ({})",
+                "Copied {} records ({}), skipped {} records ({}) from bucket '{}'",
                 self.record_count,
-                self.bucket_name,
-                ByteSize::b(self.transferred_bytes)
+                ByteSize::b(self.transferred_bytes),
+                self.skipped_count,
+                ByteSize::b(self.skipped_bytes),
+                self.bucket_name
             );
             println!("{}", msg);
         }
@@ -216,31 +233,14 @@ impl BucketProgress {
         }
     }
 
-    pub(crate) fn all_failed_after_partial_copy(&self) {
-        if !self.quiet {
-            let msg = format!(
-                "All entries ended with errors after copying {} records from bucket '{}'\n{}",
-                self.record_count,
-                self.bucket_name,
-                self.entry_tree()
-            );
-            self.progress_bar.set_message(msg);
-            self.progress_bar.abandon();
-        } else {
-            let msg = format!(
-                "All entries ended with errors after copying {} records from bucket '{}'",
-                self.record_count, self.bucket_name
-            );
-            eprintln!("{}", msg);
-        }
-    }
-
     fn message(&self) -> String {
         format!(
-            "Copying {} records from bucket '{}' ({}, {}/s)\n{}",
+            "Copying {} records ({}), skipped {} records ({}) from bucket '{}' ({}/s)\n{}",
             self.record_count,
-            self.bucket_name,
             ByteSize::b(self.transferred_bytes),
+            self.skipped_count,
+            ByteSize::b(self.skipped_bytes),
+            self.bucket_name,
             ByteSize::b(self.speed),
             self.entry_tree()
         )
@@ -432,15 +432,6 @@ where
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
-        if progress_guard.record_count > 0 {
-            progress_guard.all_failed_after_partial_copy();
-            return Err(anyhow::anyhow!(
-                "All entries ended with errors after copying {} records from bucket '{}'",
-                progress_guard.record_count,
-                progress_guard.bucket_name
-            ));
-        }
-
         progress_guard.all_failed();
         return Err(anyhow::anyhow!(
             "Failed to copy any entries from bucket '{}'",
@@ -762,18 +753,31 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
         .collect::<Vec<_>>();
     let taken_records = std::mem::take(batch);
     let errors = visitor.copy_records(entry_name, taken_records).await?;
-    if let Some((_, err)) = errors.into_iter().next() {
-        return Err(err);
-    }
+    let mut first_error: Option<ReductError> = None;
 
     for (ts, len) in batch_info {
-        *record_count += 1;
         *timestamp = ts;
+
+        if let Some(err) = errors.get(&ts) {
+            if err.status() == ErrorCode::Conflict {
+                let mut progress = bucket_progress.lock().await;
+                progress.skip(len);
+            } else if first_error.is_none() {
+                first_error = Some(err.clone());
+            }
+            continue;
+        }
+
+        *record_count += 1;
         {
             let mut progress = bucket_progress.lock().await;
             progress.update(entry_name, ts, len);
         }
         sleep(Duration::from_micros(5)).await;
+    }
+
+    if let Some(err) = first_error {
+        return Err(err);
     }
 
     *attempts = DOWNLOAD_ATTEMPTS; // reset attempts on success
