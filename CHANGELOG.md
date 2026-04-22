@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Improve `cp` compatibility and reporting: handle older-source attachment API (`MethodNotAllowed`), track copied/skipped counters (including per-entry skipped and error tree output), and keep failures in progress output, [PR-208](https://github.com/reductstore/reduct-cli/pull/208)
 - Fix Snap publish credentials env mapping in CI workflow (`SNAPCRAFT_STORE_CREDENTIALS` secret), [PR-205](https://github.com/reductstore/reduct-cli/pull/205)
 
 ## 0.11.0 - 2026-04-09
