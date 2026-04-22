@@ -222,24 +222,6 @@ impl BucketProgress {
         }
     }
 
-    pub(crate) fn all_failed(&self) {
-        if !self.quiet {
-            let msg = format!(
-                "Failed to copy any entries from bucket '{}'\n{}",
-                self.bucket_name,
-                self.entry_tree()
-            );
-            self.progress_bar.set_message(msg);
-            self.progress_bar.abandon();
-        } else {
-            let msg = format!(
-                "Failed to copy any entries from bucket '{}'",
-                self.bucket_name
-            );
-            eprintln!("{}", msg);
-        }
-    }
-
     fn message(&self) -> String {
         format!(
             "Copying {} records ({}), skipped {} records from bucket '{}' ({}/s)\n{}",
@@ -453,11 +435,21 @@ where
 
     let progress_guard = bucket_progress.lock().await;
     if failed_entries == completed_entries {
-        progress_guard.all_failed();
-        return Err(anyhow::anyhow!(
+        let msg = format!(
             "Failed to copy any entries from bucket '{}'",
             progress_guard.bucket_name
-        ));
+        );
+        if quiet {
+            eprintln!("{}", msg);
+        } else {
+            progress_guard.progress_bar.set_message(format!(
+                "{}\n{}",
+                msg,
+                progress_guard.entry_tree()
+            ));
+            progress_guard.progress_bar.abandon();
+        }
+        return Err(anyhow::anyhow!(msg));
     }
 
     progress_guard.done();
