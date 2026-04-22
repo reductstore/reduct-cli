@@ -211,11 +211,15 @@ impl BucketProgress {
     pub(crate) fn done(&self) {
         if !self.quiet {
             self.progress_bar.set_position(self.progress_metric.total());
+            let copied = if self.skipped_count > 0 {
+                format!("{} (skipped {})", self.record_count, self.skipped_count)
+            } else {
+                format!("{}", self.record_count)
+            };
             let msg = format!(
-                "Copied {} records ({}), skipped {} records from bucket '{}' ({}/s)\n{}",
-                self.record_count,
+                "Copied {} records ({}) from bucket '{}' ({}/s)\n{}",
+                copied,
                 ByteSize::b(self.transferred_bytes),
-                self.skipped_count,
                 self.bucket_name,
                 ByteSize::b(self.speed),
                 self.entry_tree()
@@ -223,11 +227,15 @@ impl BucketProgress {
             self.progress_bar.set_message(msg);
             self.progress_bar.abandon();
         } else {
+            let copied = if self.skipped_count > 0 {
+                format!("{} (skipped {})", self.record_count, self.skipped_count)
+            } else {
+                format!("{}", self.record_count)
+            };
             let msg = format!(
-                "Copied {} records ({}), skipped {} records from bucket '{}'",
-                self.record_count,
+                "Copied {} records ({}) from bucket '{}'",
+                copied,
                 ByteSize::b(self.transferred_bytes),
-                self.skipped_count,
                 self.bucket_name
             );
             println!("{}", msg);
@@ -235,11 +243,16 @@ impl BucketProgress {
     }
 
     fn message(&self) -> String {
+        let copied = if self.skipped_count > 0 {
+            format!("{} (skipped {})", self.record_count, self.skipped_count)
+        } else {
+            format!("{}", self.record_count)
+        };
+
         format!(
-            "Copying {} records ({}), skipped {} records from bucket '{}' ({}/s)\n{}",
-            self.record_count,
+            "Copying {} records ({}) from bucket '{}' ({}/s)\n{}",
+            copied,
             ByteSize::b(self.transferred_bytes),
-            self.skipped_count,
             self.bucket_name,
             ByteSize::b(self.speed),
             self.entry_tree()
