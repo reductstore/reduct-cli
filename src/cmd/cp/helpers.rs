@@ -84,8 +84,8 @@ pub(super) struct BucketProgress {
     total_entries: usize,
     progress_metric: ProgressMetric,
     entry_stats: HashMap<String, (u64, u64)>,
+    skipped_by_entry: HashMap<String, u64>,
     transferred_bytes: u64,
-    skipped_bytes: u64,
     record_count: u64,
     skipped_count: u64,
     speed: u64,
@@ -113,8 +113,8 @@ impl BucketProgress {
             total_entries,
             progress_metric,
             entry_stats: HashMap::new(),
+            skipped_by_entry: HashMap::new(),
             transferred_bytes: 0,
-            skipped_bytes: 0,
             record_count: 0,
             skipped_count: 0,
             speed: 0,
@@ -171,9 +171,12 @@ impl BucketProgress {
         }
     }
 
-    pub(super) fn skip(&mut self, content_length: u64) {
-        self.skipped_bytes = self.skipped_bytes.saturating_add(content_length);
+    pub(super) fn skip(&mut self, entry_name: &str) {
         self.skipped_count = self.skipped_count.saturating_add(1);
+        *self
+            .skipped_by_entry
+            .entry(entry_name.to_string())
+            .or_insert(0) += 1;
 
         if !self.quiet {
             self.progress_bar.set_message(self.message());
@@ -191,11 +194,10 @@ impl BucketProgress {
         if !self.quiet {
             self.progress_bar.set_position(self.progress_metric.total());
             let msg = format!(
-                "Copied {} records ({}), skipped {} records ({}) from bucket '{}' ({}/s)\n{}",
+                "Copied {} records ({}), skipped {} records from bucket '{}' ({}/s)\n{}",
                 self.record_count,
                 ByteSize::b(self.transferred_bytes),
                 self.skipped_count,
-                ByteSize::b(self.skipped_bytes),
                 self.bucket_name,
                 ByteSize::b(self.speed),
                 self.entry_tree()
@@ -204,11 +206,10 @@ impl BucketProgress {
             self.progress_bar.abandon();
         } else {
             let msg = format!(
-                "Copied {} records ({}), skipped {} records ({}) from bucket '{}'",
+                "Copied {} records ({}), skipped {} records from bucket '{}'",
                 self.record_count,
                 ByteSize::b(self.transferred_bytes),
                 self.skipped_count,
-                ByteSize::b(self.skipped_bytes),
                 self.bucket_name
             );
             println!("{}", msg);
@@ -235,11 +236,10 @@ impl BucketProgress {
 
     fn message(&self) -> String {
         format!(
-            "Copying {} records ({}), skipped {} records ({}) from bucket '{}' ({}/s)\n{}",
+            "Copying {} records ({}), skipped {} records from bucket '{}' ({}/s)\n{}",
             self.record_count,
             ByteSize::b(self.transferred_bytes),
             self.skipped_count,
-            ByteSize::b(self.skipped_bytes),
             self.bucket_name,
             ByteSize::b(self.speed),
             self.entry_tree()
@@ -264,12 +264,14 @@ impl BucketProgress {
                 "├─ "
             };
             let (records, bytes) = self.entry_stats.get(entry).copied().unwrap_or((0, 0));
+            let skipped = self.skipped_by_entry.get(entry).copied().unwrap_or(0);
             lines.push(format!(
-                "  {}{} (🧷 {}, 📦 {})",
+                "  {}{} (🧷 {}, 📦 {}, ⏭️ {})",
                 prefix,
                 entry,
                 records,
-                ByteSize::b(bytes)
+                ByteSize::b(bytes),
+                skipped
             ));
         }
         if self.total_entries > self.displayed_entries.len() {
@@ -761,7 +763,7 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
         if let Some(err) = errors.get(&ts) {
             if err.status() == ErrorCode::Conflict {
                 let mut progress = bucket_progress.lock().await;
-                progress.skip(len);
+                progress.skip(entry_name);
             } else if first_error.is_none() {
                 first_error = Some(err.clone());
             }
