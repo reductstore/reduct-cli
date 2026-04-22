@@ -760,7 +760,13 @@ async fn copy_entry_attachments_once<V: CopyVisitor + Sync + ?Sized>(
 
     let attachments = match src_bucket.read_attachments(entry_name).await {
         Ok(attachments) => attachments,
-        Err(err) if err.status() == ErrorCode::NotFound => HashMap::<String, Value>::new(),
+        Err(err)
+            if err.status() == ErrorCode::NotFound
+                || err.status() == ErrorCode::MethodNotAllowed =>
+        {
+            // Older ReductStore versions may not support attachments endpoints.
+            HashMap::<String, Value>::new()
+        }
         Err(err) => return Err(err),
     };
 
