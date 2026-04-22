@@ -96,6 +96,14 @@ pub(super) struct BucketProgress {
 }
 
 impl BucketProgress {
+    fn track_displayed_entry(&mut self, entry_name: &str) {
+        if self.displayed_entries.len() < self.display_limit
+            && !self.displayed_entries.iter().any(|name| name == entry_name)
+        {
+            self.displayed_entries.push(entry_name.to_string());
+        }
+    }
+
     fn new(
         bucket_name: String,
         display_limit: usize,
@@ -143,11 +151,8 @@ impl BucketProgress {
         let was_empty = entry_stats.0 == 0;
         entry_stats.0 = entry_stats.0.saturating_add(1);
         entry_stats.1 = entry_stats.1.saturating_add(content_length);
-        if was_empty
-            && self.displayed_entries.len() < self.display_limit
-            && !self.displayed_entries.iter().any(|name| name == entry_name)
-        {
-            self.displayed_entries.push(entry_name.to_string());
+        if was_empty {
+            self.track_displayed_entry(entry_name);
         }
 
         let duration = self.history[0].1.elapsed().as_secs();
@@ -177,6 +182,7 @@ impl BucketProgress {
             .skipped_by_entry
             .entry(entry_name.to_string())
             .or_insert(0) += 1;
+        self.track_displayed_entry(entry_name);
 
         if !self.quiet {
             self.progress_bar.set_message(self.message());
