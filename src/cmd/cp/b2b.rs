@@ -44,25 +44,13 @@ impl CopyVisitor for CopyToBucketVisitor {
 
             Ok(result)
         } else {
-            // Write records one-by-one for better compatibility across server versions.
-            let mut result: BTreeMap<u64, ReductError> = BTreeMap::new();
-            for record in records {
-                let timestamp = record.timestamp_us();
-                let res = self
-                    .dst_bucket
-                    .write_record(entry_name)
-                    .timestamp_us(record.timestamp_us())
-                    .labels(record.labels().clone())
-                    .content_type(record.content_type())
-                    .content_length(record.content_length() as u64)
-                    .stream(record.stream_bytes())
-                    .send()
-                    .await;
-                if let Err(err) = res {
-                    result.insert(timestamp, err);
-                }
-            }
-            Ok(result)
+            let errors = self
+                .dst_bucket
+                .write_batch(entry_name)
+                .add_records(records)
+                .send()
+                .await?;
+            Ok(errors.into_iter().collect())
         }
     }
 
