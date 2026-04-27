@@ -1,7 +1,7 @@
 title: Reduct CLI
 name: reduct-cli
 base: core24
-version: git
+adopt-info: reduct-cli
 summary: Command-line client for ReductStore
 
 description: |
@@ -29,6 +29,10 @@ parts:
   reduct-cli:
     plugin: dump
     source: .snap-build/bin
+    override-pull: |
+      craftctl default
+      VERSION=$(sed -n 's/^version = "\([^"]*\)"$/\1/p' "$CRAFT_PROJECT_DIR/Cargo.toml" | head -n1)
+      craftctl set version="$VERSION"
     organize:
       reduct-cli: bin/reduct-cli
 
