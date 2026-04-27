@@ -1487,9 +1487,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-base"
-version = "1.19.1"
+version = "1.19.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2da32b8ad3a89caeb265138c36c095c62458688421c3ec3ea7badc88e64f12a"
+checksum = "4c1a65d672f28500f7f25663f2b5e6e7735d4528d9bf9cfc1e1895a67e0662ed"
 dependencies = [
  "bytes",
  "chrono",
@@ -1535,9 +1535,9 @@ dependencies = [
 
 [[package]]
 name = "reduct-rs"
-version = "1.19.0"
+version = "1.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26479d997d49e72e8ee10dfd79fceea2e7d5dc5e84e1f9bf2c547abf41b4d15a"
+checksum = "11aaedbab4bb5cdede446a473f294a9dca6e814b6faf2c636f1ea6efa7b35e7e"
 dependencies = [
  "async-channel",
  "async-stream",
