@@ -235,25 +235,21 @@ jobs:
 
       - name: Upload Linux Unix artifact
         if: ${{ matrix.target != 'x86_64-pc-windows-gnu' }}
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ needs.make_release.outputs.upload_url }}
-          asset_path: /tmp/reduct-cli.${{ matrix.target }}.tar.gz
-          asset_name: reduct-cli.${{ matrix.target }}.tar.gz
-          asset_content_type: application/gzip
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "/tmp/reduct-cli.${{ matrix.target }}.tar.gz" \
+            --clobber
 
       - name: Upload Windows artifact
         if: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
-        uses: actions/upload-release-asset@v1
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          upload_url: ${{ needs.make_release.outputs.upload_url }}
-          asset_path: /tmp/reduct-cli.${{ matrix.target }}.zip
-          asset_name: reduct-cli.${{ matrix.target }}.zip
-          asset_content_type: application/zip
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            "/tmp/reduct-cli.${{ matrix.target }}.zip" \
+            --clobber
 
   snap_release:
     name: Build and Publish Snap Package
