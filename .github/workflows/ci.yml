@@ -19,6 +19,7 @@ on:
 
 env:
   REGISTRY_IMAGE: reduct/store
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions: read-all
 
