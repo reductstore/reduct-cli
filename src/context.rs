@@ -252,4 +252,18 @@ pub(crate) mod tests {
 
         "test_replica".to_string()
     }
+
+    #[fixture]
+    pub(crate) async fn lifecycle(context: CliContext) -> String {
+        let client = build_client(&context, "local").await.unwrap();
+        // remove the lifecycle if it already exists
+        if let Ok(_) = client.get_lifecycle("test_lifecycle").await {
+            client
+                .delete_lifecycle("test_lifecycle")
+                .await
+                .unwrap_or_default();
+        }
+
+        "test_lifecycle".to_string()
+    }
 }

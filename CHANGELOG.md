@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add lifecycle policy API support, [PR-221](https://github.com/reductstore/reduct-cli/pull/221)
+
 ### Changed
 
 - Pin third-party GitHub Actions in CI workflows to immutable SHAs (`dtolnay/rust-toolchain`, `softprops/action-gh-release`, `snapcore/action-publish`) and upgrade first-party `actions/*` steps to latest major versions with Node 24 support, [PR-219](https://github.com/reductstore/reduct-cli/pull/219)

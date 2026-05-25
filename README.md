@@ -12,7 +12,7 @@ blob data.
 ## Features
 
 * Support for ReductStore API v1.18
-* Easy management of buckets, tokens and replications
+* Easy management of buckets, tokens, replications and lifecycle policies
 * Ability to check the status of a storage engine
 * Aliases for storing server credentials
 * Export and mirror data
