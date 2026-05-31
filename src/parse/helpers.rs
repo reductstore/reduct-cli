@@ -5,7 +5,7 @@
 
 use crate::config::{resolve_connection_options, ConnectionOptions};
 use crate::context::CliContext;
-use chrono::DateTime;
+use chrono::{DateTime, Local, LocalResult, NaiveDate, NaiveDateTime, TimeZone};
 use clap::parser::MatchesError;
 use clap::ArgMatches;
 use reduct_rs::{Bucket, EntryInfo};
@@ -36,24 +36,86 @@ pub(crate) async fn fetch_and_filter_entries(
 }
 
 pub(crate) fn parse_time(time_str: Option<&String>) -> anyhow::Result<Option<u64>> {
-    if time_str.is_none() {
-        return Ok(None);
-    }
-
-    let time_str = time_str.unwrap();
-    let time = if let Ok(time) = time_str.parse::<i64>() {
-        if time < 0 {
-            return Err(anyhow::anyhow!("Time must be a positive integer"));
-        }
-        time
-    } else {
-        // try parse as ISO 8601
-        DateTime::parse_from_rfc3339(time_str)
-            .map_err(|err| anyhow::anyhow!("Failed to parse time {}: {}", time_str, err))?
-            .timestamp_micros()
+    let time_str = match time_str {
+        Some(value) => value.trim(),
+        None => return Ok(None),
     };
 
-    Ok(Some(time as u64))
+    if time_str.is_empty() {
+        return Err(anyhow::anyhow!("Time is empty"));
+    }
+
+    if time_str.starts_with('-') {
+        return Err(anyhow::anyhow!("Time must be a positive integer"));
+    }
+
+    // Treat digit-only values as timestamps so numeric overflow does not fall through
+    // into date parsing and produce a misleading format error.
+    if time_str.chars().all(|c| c.is_ascii_digit()) {
+        match time_str.parse::<u64>() {
+            Ok(value) => return Ok(Some(value)),
+            Err(err) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to parse numeric timestamp {}: {}",
+                    time_str,
+                    err
+                ))
+            }
+        }
+    }
+
+    // Keep timezone-aware input first so explicit offsets always win over local-time
+    // interpretation.
+    if let Ok(value) = DateTime::parse_from_rfc3339(time_str) {
+        let timestamp = timestamp_micros_to_u64(value.timestamp_micros(), time_str)?;
+        return Ok(Some(timestamp));
+    }
+
+    // Timezone-free input is resolved through the machine's local timezone because
+    // users asked for short local date/time forms.
+    if let Ok(value) = NaiveDateTime::parse_from_str(time_str, "%Y-%m-%dT%H:%M:%S") {
+        let timestamp = local_datetime_to_timestamp(value, time_str)?;
+        return Ok(Some(timestamp));
+    }
+
+    if let Ok(value) = NaiveDate::parse_from_str(time_str, "%Y-%m-%d") {
+        let value = value
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse time {}", time_str))?;
+
+        let timestamp = local_datetime_to_timestamp(value, time_str)?;
+        return Ok(Some(timestamp));
+    }
+
+    Err(anyhow::anyhow!(
+        "Failed to parse time {}: expected Unix microseconds, RFC3339, local datetime, or local date",
+        time_str
+    ))
+}
+
+fn local_datetime_to_timestamp(value: NaiveDateTime, time_str: &str) -> anyhow::Result<u64> {
+    match Local.from_local_datetime(&value) {
+        LocalResult::Single(value) => timestamp_micros_to_u64(value.timestamp_micros(), time_str),
+        // Ambiguous/nonexistent local times happen around DST transitions; fail loudly
+        // instead of silently choosing the wrong instant.
+        LocalResult::Ambiguous(_, _) => Err(anyhow::anyhow!(
+            "Failed to parse time {}: local time is ambiguous",
+            time_str
+        )),
+        LocalResult::None => Err(anyhow::anyhow!(
+            "Failed to parse time {}: local time does not exist",
+            time_str
+        )),
+    }
+}
+
+fn timestamp_micros_to_u64(micros: i64, time_str: &str) -> anyhow::Result<u64> {
+    u64::try_from(micros).map_err(|_| {
+        anyhow::anyhow!(
+            "Timestamp must be greater than or equal to Unix epoch: {}",
+            time_str
+        )
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +240,169 @@ pub(crate) fn parse_query_params(
 #[cfg(test)]
 mod test {
     use super::*;
+
+    mod parse_time_tests {
+        use super::*;
+
+        #[test]
+        fn returns_none_when_time_is_not_provided() {
+            assert_eq!(parse_time(None).unwrap(), None);
+        }
+
+        #[test]
+        fn rejects_empty_time() {
+            assert_eq!(
+                parse_time(Some(&"   ".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Time is empty"
+            );
+        }
+
+        #[test]
+        fn rejects_negative_numeric_timestamp() {
+            assert_eq!(
+                parse_time(Some(&"-100".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Time must be a positive integer"
+            );
+        }
+
+        #[test]
+        fn parses_numeric_timestamp_with_surrounding_whitespace() {
+            assert_eq!(parse_time(Some(&" 100 ".to_string())).unwrap(), Some(100));
+        }
+
+        #[test]
+        fn rejects_numeric_timestamp_overflow() {
+            assert!(
+                parse_time(Some(&"999999999999999999999999999999".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string()
+                    .starts_with(
+                        "Failed to parse numeric timestamp 999999999999999999999999999999"
+                    )
+            );
+        }
+
+        #[test]
+        fn parses_rfc3339_timestamp() {
+            assert_eq!(
+                parse_time(Some(&"2023-01-01T00:00:00Z".to_string())).unwrap(),
+                Some(1672531200000000)
+            );
+        }
+
+        #[test]
+        fn parses_rfc3339_timestamp_with_offset() {
+            assert_eq!(
+                parse_time(Some(&"2023-01-01T03:00:00+03:00".to_string())).unwrap(),
+                Some(1672531200000000)
+            );
+        }
+
+        #[test]
+        fn parses_local_datetime() {
+            let expected = Local
+                .with_ymd_and_hms(2026, 1, 1, 20, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp_micros() as u64;
+
+            assert_eq!(
+                parse_time(Some(&"2026-01-01T20:00:00".to_string())).unwrap(),
+                Some(expected)
+            );
+        }
+
+        #[test]
+        fn rejects_local_datetime_with_space_separator() {
+            assert_eq!(
+                parse_time(Some(&"2026-01-01 20:00:00".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Failed to parse time 2026-01-01 20:00:00: expected Unix microseconds, RFC3339, local datetime, or local date"
+            );
+        }
+
+        #[test]
+        fn rejects_local_datetime_with_fractional_seconds() {
+            assert_eq!(
+                parse_time(Some(&"2026-01-01T20:00:00.123456".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Failed to parse time 2026-01-01T20:00:00.123456: expected Unix microseconds, RFC3339, local datetime, or local date"
+            );
+        }
+
+        #[test]
+        fn parses_local_date() {
+            let expected = Local
+                .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp_micros() as u64;
+
+            assert_eq!(
+                parse_time(Some(&"2026-01-01".to_string())).unwrap(),
+                Some(expected)
+            );
+        }
+
+        #[test]
+        fn parses_local_date_without_zero_padding() {
+            let expected = Local
+                .with_ymd_and_hms(2026, 1, 1, 0, 0, 0)
+                .single()
+                .unwrap()
+                .timestamp_micros() as u64;
+
+            assert_eq!(
+                parse_time(Some(&"2026-1-1".to_string())).unwrap(),
+                Some(expected)
+            );
+        }
+
+        #[test]
+        fn rejects_invalid_time() {
+            assert_eq!(
+                parse_time(Some(&"xxx".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Failed to parse time xxx: expected Unix microseconds, RFC3339, local datetime, or local date"
+            );
+        }
+
+        #[test]
+        fn rejects_pre_epoch_rfc3339_timestamp() {
+            assert_eq!(
+                parse_time(Some(&"1969-12-31T23:59:59Z".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Timestamp must be greater than or equal to Unix epoch: 1969-12-31T23:59:59Z"
+            );
+        }
+
+        #[test]
+        fn rejects_pre_epoch_local_date() {
+            assert_eq!(
+                parse_time(Some(&"1969-12-31".to_string()))
+                    .err()
+                    .unwrap()
+                    .to_string(),
+                "Timestamp must be greater than or equal to Unix epoch: 1969-12-31"
+            );
+        }
+    }
+
     mod parse_query_params {
         use crate::cmd::cp::cp_cmd;
         use crate::config::ConfigFile;
