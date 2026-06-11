@@ -696,9 +696,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "http"
-version = "1.4.0"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3ba2a386d7f85a81f119ad7498ebe444d2e22c2af0b86b069416ace48b3311a"
+checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
 dependencies = [
  "bytes",
  "itoa",
@@ -1488,7 +1488,7 @@ dependencies = [
 [[package]]
 name = "reduct-base"
 version = "1.20.0"
-source = "git+https://github.com/reductstore/reductstore?branch=main#cc727e596b38986effc48113aeb9af129ce4c431"
+source = "git+https://github.com/reductstore/reductstore?branch=rename-max-age-to-older-than-lifecycle-policy#f6f803ad47ea4da4a79ef26977aa04a94db73d9e"
 dependencies = [
  "bytes",
  "chrono",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "reduct-rs"
 version = "1.19.1"
-source = "git+https://github.com/reductstore/reduct-rs?branch=main#2c25059b610bbf62b73150e09528430e8cc8afb3"
+source = "git+https://github.com/reductstore/reduct-rs?branch=87-lifecycle-compress-older-than#e442a4cd4330e6c45fc959b06bc4ce41248a8fe3"
 dependencies = [
  "async-channel",
  "async-stream",

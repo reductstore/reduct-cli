@@ -8,6 +8,15 @@ use crate::io::reduct::build_client;
 use crate::parse::widely_used_args::{make_entries_arg, make_when_arg};
 use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, Command};
+use reduct_rs::LifecycleType;
+
+fn parse_lifecycle_type(value: &str) -> Result<LifecycleType, String> {
+    match value {
+        "delete" => Ok(LifecycleType::Delete),
+        "compress" => Ok(LifecycleType::Compress),
+        _ => Err(format!("invalid lifecycle type '{value}'")),
+    }
+}
 
 pub(super) fn update_lifecycle_cmd() -> Command {
     Command::new("update")
@@ -26,10 +35,18 @@ pub(super) fn update_lifecycle_cmd() -> Command {
                 .required(false),
         )
         .arg(
-            Arg::new("max-age")
-                .long("max-age")
+            Arg::new("type")
+                .long("type")
+                .value_name("ACTION")
+                .help("Lifecycle action type: delete or compress")
+                .value_parser(parse_lifecycle_type)
+                .required(false),
+        )
+        .arg(
+            Arg::new("older-than")
+                .long("older-than")
                 .value_name("DURATION")
-                .help("Maximum record age (e.g. 1h, 30d, 3600s)")
+                .help("Match records older than this duration (e.g. 1h, 30d, 3600s)")
                 .required(false),
         )
         .arg(
@@ -59,8 +76,11 @@ pub(super) async fn update_lifecycle_handler(
     if let Some(bucket) = args.get_one::<String>("bucket") {
         settings.bucket = bucket.to_string();
     }
-    if let Some(max_age) = args.get_one::<String>("max-age") {
-        settings.max_age = max_age.to_string();
+    if let Some(lifecycle_type) = args.get_one::<LifecycleType>("type") {
+        settings.lifecycle_type = *lifecycle_type;
+    }
+    if let Some(older_than) = args.get_one::<String>("older-than") {
+        settings.older_than = older_than.to_string();
     }
     if let Some(interval) = args.get_one::<String>("interval") {
         settings.interval = interval.to_string();
@@ -102,7 +122,9 @@ mod tests {
             format!("local/{}", test_lifecycle).as_str(),
             "--bucket",
             &bucket2,
-            "--max-age",
+            "--type",
+            "compress",
+            "--older-than",
             "2h",
             "--interval",
             "30m",
@@ -115,8 +137,9 @@ mod tests {
         update_lifecycle_handler(&context, &args).await.unwrap();
 
         let lifecycle = client.get_lifecycle(&test_lifecycle).await.unwrap();
+        assert_eq!(lifecycle.settings.lifecycle_type, LifecycleType::Compress);
         assert_eq!(lifecycle.settings.bucket, bucket2);
-        assert_eq!(lifecycle.settings.max_age, "2h");
+        assert_eq!(lifecycle.settings.older_than, "2h");
         assert_eq!(lifecycle.settings.interval, "30m");
         assert_eq!(lifecycle.settings.entries, vec!["entry1", "entry2"]);
         assert_eq!(

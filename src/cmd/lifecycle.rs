@@ -81,7 +81,7 @@ mod tests {
         client
             .create_lifecycle(lifecycle)
             .bucket(bucket)
-            .max_age("1h")
+            .older_than("1h")
             .interval("10m")
             .send()
             .await?;
