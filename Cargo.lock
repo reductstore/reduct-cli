@@ -1488,7 +1488,7 @@ dependencies = [
 [[package]]
 name = "reduct-base"
 version = "1.20.0"
-source = "git+https://github.com/reductstore/reductstore?branch=rename-max-age-to-older-than-lifecycle-policy#f6f803ad47ea4da4a79ef26977aa04a94db73d9e"
+source = "git+https://github.com/reductstore/reductstore?branch=main#f2bc5e35155603bbe0e4b093fb9b83e76cc323be"
 dependencies = [
  "bytes",
  "chrono",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "reduct-rs"
 version = "1.19.1"
-source = "git+https://github.com/reductstore/reduct-rs?branch=87-lifecycle-compress-older-than#e442a4cd4330e6c45fc959b06bc4ce41248a8fe3"
+source = "git+https://github.com/reductstore/reduct-rs?branch=main#33f519d189d7934b7d9a565b9b1727d887b447ae"
 dependencies = [
  "async-channel",
  "async-stream",
