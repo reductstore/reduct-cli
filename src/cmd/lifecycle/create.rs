@@ -122,8 +122,6 @@ mod tests {
             "create",
             format!("local/{}", test_lifecycle).as_str(),
             bucket.as_str(),
-            "--type",
-            "compress",
             "--older-than",
             "1h",
             "--interval",
