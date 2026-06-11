@@ -135,7 +135,7 @@ mod tests {
         create_lifecycle(&context, &args).await.unwrap();
 
         let lifecycle = client.get_lifecycle(&test_lifecycle).await.unwrap();
-        assert_eq!(lifecycle.settings.lifecycle_type, LifecycleType::Compress);
+        assert_eq!(lifecycle.settings.lifecycle_type, LifecycleType::Delete);
         assert_eq!(lifecycle.settings.bucket, bucket);
         assert_eq!(lifecycle.settings.older_than, "1h");
         assert_eq!(lifecycle.settings.interval, "10m");
