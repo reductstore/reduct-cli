@@ -696,9 +696,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "http"
-version = "1.4.0"
+version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3ba2a386d7f85a81f119ad7498ebe444d2e22c2af0b86b069416ace48b3311a"
+checksum = "6970f50e31d6fc17d3fa27329444bfa74e196cf62e95052a3f6fee181dba6425"
 dependencies = [
  "bytes",
  "itoa",
@@ -1488,7 +1488,7 @@ dependencies = [
 [[package]]
 name = "reduct-base"
 version = "1.20.0"
-source = "git+https://github.com/reductstore/reductstore?branch=main#cc727e596b38986effc48113aeb9af129ce4c431"
+source = "git+https://github.com/reductstore/reductstore?branch=main#f2bc5e35155603bbe0e4b093fb9b83e76cc323be"
 dependencies = [
  "bytes",
  "chrono",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "reduct-rs"
 version = "1.19.1"
-source = "git+https://github.com/reductstore/reduct-rs?branch=main#2c25059b610bbf62b73150e09528430e8cc8afb3"
+source = "git+https://github.com/reductstore/reduct-rs?branch=main#33f519d189d7934b7d9a565b9b1727d887b447ae"
 dependencies = [
  "async-channel",
  "async-stream",

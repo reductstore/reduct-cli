@@ -56,7 +56,7 @@ pub(super) async fn show_lifecycle_handler(
         ),
         labeled_cell("Type", format!("{:?}", lifecycle.settings.lifecycle_type)),
         labeled_cell("Bucket", lifecycle.settings.bucket.clone()),
-        labeled_cell("Max Age", lifecycle.settings.max_age.clone()),
+        labeled_cell("Older Than", lifecycle.settings.older_than.clone()),
         labeled_cell("Interval", lifecycle.settings.interval.clone()),
         labeled_cell("Entries", format!("{:?}", lifecycle.settings.entries)),
     ];
@@ -105,7 +105,7 @@ mod tests {
         assert!(output[0].contains(&bucket));
         assert!(output[0].contains("Mode: ▶ Enabled"));
         assert!(output[0].contains("Type: Delete"));
-        assert!(output[0].contains("Max Age: 1h"));
+        assert!(output[0].contains("Older Than: 1h"));
         assert!(output[0].contains("Interval: 10m"));
         assert!(output[0].contains("When: None"));
     }
