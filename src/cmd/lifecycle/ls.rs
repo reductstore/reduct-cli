@@ -8,7 +8,7 @@ use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::io::std::output;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, Command};
-use reduct_rs::LifecycleInfo;
+use reduct_rs::{LifecycleInfo, LifecycleType};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -36,6 +36,8 @@ struct LifecycleTable {
     name: String,
     #[tabled(rename = "Status")]
     status: String,
+    #[tabled(rename = "Type")]
+    lifecycle_type: String,
     #[tabled(rename = "Mode")]
     mode: String,
     #[tabled(rename = "Provisioned")]
@@ -51,6 +53,7 @@ impl From<LifecycleInfo> for LifecycleTable {
             } else {
                 "⏸ Idle".to_string()
             },
+            lifecycle_type: format_lifecycle_type(lifecycle.lifecycle_type),
             mode: format_mode_with_icon(lifecycle.mode),
             provisioned: if lifecycle.is_provisioned {
                 "✓".to_string()
@@ -58,6 +61,13 @@ impl From<LifecycleInfo> for LifecycleTable {
                 "-".to_string()
             },
         }
+    }
+}
+
+fn format_lifecycle_type(lifecycle_type: LifecycleType) -> String {
+    match lifecycle_type {
+        LifecycleType::Delete => "Delete".to_string(),
+        LifecycleType::Compress => "Compress".to_string(),
     }
 }
 
@@ -96,7 +106,26 @@ mod tests {
     use crate::cmd::lifecycle::tests::{prepare_lifecycle, unique_name};
     use crate::context::tests::context;
     use crate::context::CliContext;
+    use chrono::Utc;
+    use reduct_rs::LifecycleMode;
     use rstest::rstest;
+
+    #[test]
+    fn test_lifecycle_table_includes_type() {
+        let lifecycle = LifecycleInfo {
+            name: "test-lifecycle".to_string(),
+            is_provisioned: true,
+            is_running: false,
+            lifecycle_type: LifecycleType::Compress,
+            mode: LifecycleMode::Enabled,
+            last_run: Some(Utc::now()),
+        };
+
+        let row = LifecycleTable::from(lifecycle);
+        assert_eq!(row.lifecycle_type, "Compress");
+        assert_eq!(row.mode, "▶ Enabled");
+        assert_eq!(row.provisioned, "✓");
+    }
 
     #[rstest]
     #[tokio::test]
@@ -134,6 +163,7 @@ mod tests {
         let output = context.stdout().history();
         assert_eq!(output.len(), 1);
         assert!(output[0].contains(&lifecycle));
+        assert!(output[0].contains("Delete"));
         assert!(output[0].contains("▶ Enabled"));
     }
 }
