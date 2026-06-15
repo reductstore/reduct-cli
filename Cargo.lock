@@ -1488,7 +1488,7 @@ dependencies = [
 [[package]]
 name = "reduct-base"
 version = "1.20.0"
-source = "git+https://github.com/reductstore/reductstore?branch=main#f2bc5e35155603bbe0e4b093fb9b83e76cc323be"
+source = "git+https://github.com/reductstore/reductstore?branch=main#58d26a078a88f61a990dcaec2669e078d64f46f5"
 dependencies = [
  "bytes",
  "chrono",
@@ -1535,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "reduct-rs"
 version = "1.19.1"
-source = "git+https://github.com/reductstore/reduct-rs?branch=main#33f519d189d7934b7d9a565b9b1727d887b447ae"
+source = "git+https://github.com/reductstore/reduct-rs?branch=main#6b1710dcd12a664adb5e48ef1c3aa4d16b7e925c"
 dependencies = [
  "async-channel",
  "async-stream",
