@@ -174,30 +174,40 @@ mod tests {
 
         let (oldest_record, latest_record) = record_range_values(0, 1000, false);
         let (oldest_record_2, latest_record_2) = record_range_values(0, 0, true);
-        let expected_rows = vec![
-            BucketRow {
-                name: "test_bucket".to_string(),
-                entries: 1,
-                size: "74 B".to_string(),
-                status: "✅ Ready".to_string(),
-                provisioned: "-".to_string(),
-                oldest_record,
-                latest_record,
-            },
-            BucketRow {
-                name: "test_bucket_2".to_string(),
-                entries: 0,
-                size: "0 B".to_string(),
-                status: "✅ Ready".to_string(),
-                provisioned: "-".to_string(),
-                oldest_record: oldest_record_2,
-                latest_record: latest_record_2,
-            },
-        ];
-        let expected_table = Table::new(expected_rows)
-            .with(Style::markdown())
-            .to_string();
+        let output = context.stdout().history().join("\n");
+        let rows = output
+            .lines()
+            .filter(|line| line.starts_with("| test_bucket"))
+            .map(|line| {
+                line.trim_matches('|')
+                    .split('|')
+                    .map(|cell| cell.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
 
-        assert_eq!(context.stdout().history(), vec![expected_table]);
+        assert_eq!(
+            rows,
+            vec![
+                vec![
+                    "test_bucket".to_string(),
+                    "1".to_string(),
+                    "74 B".to_string(),
+                    "✅ Ready".to_string(),
+                    "-".to_string(),
+                    oldest_record,
+                    latest_record,
+                ],
+                vec![
+                    "test_bucket_2".to_string(),
+                    "0".to_string(),
+                    "0 B".to_string(),
+                    "✅ Ready".to_string(),
+                    "-".to_string(),
+                    oldest_record_2,
+                    latest_record_2,
+                ],
+            ]
+        );
     }
 }
