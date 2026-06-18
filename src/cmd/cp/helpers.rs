@@ -11,7 +11,9 @@ use crate::parse::{fetch_and_filter_entries, QueryParams};
 use bytesize::ByteSize;
 use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use reduct_rs::{condition, Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError};
+use reduct_rs::{
+    condition, Bucket, EntryInfo, ErrorCode, QueryBuilder, Record, ReductError, ResourceStatus,
+};
 use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinSet;
@@ -358,6 +360,10 @@ pub(super) trait CopyVisitor {
     ) -> Result<(), ReductError> {
         Ok(())
     }
+
+    async fn entry_status(&self, _entry_name: &str) -> Result<Option<ResourceStatus>, ReductError> {
+        Ok(None)
+    }
 }
 
 /**
@@ -377,13 +383,21 @@ pub(super) async fn start_loading<V>(
 where
     V: CopyVisitor + Send + Sync + 'static,
 {
-    start_loading_with_entry_start_overrides(src_bucket, query_params, None, dst_bucket_v).await
+    start_loading_with_entry_start_overrides(
+        src_bucket,
+        query_params,
+        None,
+        HashMap::new(),
+        dst_bucket_v,
+    )
+    .await
 }
 
 pub(super) async fn start_loading_with_entry_start_overrides<V>(
     src_bucket: Bucket,
     query_params: QueryParams,
     entry_start_overrides: Option<HashMap<String, u64>>,
+    blocked_entries: HashMap<String, String>,
     dst_bucket_v: V,
 ) -> anyhow::Result<()>
 where
@@ -392,6 +406,16 @@ where
     let entries = fetch_and_filter_entries(&src_bucket, &query_params.entry_filter).await?;
     if entries.is_empty() {
         return Ok(());
+    }
+
+    let mut eligible_entries = Vec::with_capacity(entries.len());
+    let mut blocked_entry_errors = Vec::new();
+    for entry in entries {
+        if let Some(error) = blocked_entries.get(&entry.name) {
+            blocked_entry_errors.push((entry.name.clone(), error.clone()));
+        } else {
+            eligible_entries.push(entry);
+        }
     }
 
     let mut tasks = JoinSet::new();
@@ -408,20 +432,20 @@ where
     let bucket_name = src_bucket.name().to_string();
     let quiet = query_params.quiet;
     let progress_metric = build_progress_metric(
-        &entries,
+        &eligible_entries,
         &query_params,
         entry_start_overrides.as_ref().map(|v| v.as_ref()),
     );
     let bucket_progress = Arc::new(AsyncMutex::new(BucketProgress::new(
         bucket_name,
         display_limit,
-        entries.len(),
+        eligible_entries.len() + blocked_entry_errors.len(),
         progress_metric,
         &progress,
         quiet,
     )));
 
-    for entry in entries {
+    for entry in eligible_entries {
         let local_sem = Arc::clone(&semaphore);
         let local_visitor = Arc::clone(&dst_bucket);
         let params = build_entry_params(&query_params, &entry, entry_start_overrides.as_deref());
@@ -438,8 +462,15 @@ where
         ));
     }
 
-    let mut failed_entries = 0usize;
-    let mut completed_entries = 0usize;
+    {
+        let mut progress = bucket_progress.lock().await;
+        for (entry_name, error) in &blocked_entry_errors {
+            progress.fail_entry(entry_name, error);
+        }
+    }
+
+    let mut failed_entries = blocked_entry_errors.len();
+    let mut completed_entries = blocked_entry_errors.len();
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok(outcome) => {
@@ -819,6 +850,16 @@ async fn flush_batch<V: CopyVisitor + Sync + ?Sized>(
 
         if let Some(err) = errors.get(&ts) {
             if err.status() == ErrorCode::Conflict {
+                if matches!(
+                    visitor.entry_status(entry_name).await?,
+                    Some(ResourceStatus::Deleting)
+                ) {
+                    return Err(ReductError::new(
+                        ErrorCode::Conflict,
+                        "Destination entry is being deleted",
+                    ));
+                }
+
                 let mut progress = bucket_progress.lock().await;
                 progress.skip(entry_name);
             } else if first_error.is_none() {
@@ -1093,6 +1134,7 @@ mod tests {
             #[async_trait]
             impl CopyVisitor for Visitor {
                 async fn copy_records(&self, entry_name: &str, records: Vec<Record>)  -> Result<BTreeMap<u64, ReductError>, ReductError>;
+                async fn entry_status(&self, entry_name: &str) -> Result<Option<ResourceStatus>, ReductError>;
             }
         }
         #[fixture]
@@ -1191,6 +1233,65 @@ mod tests {
                 .withf(|entry, _record| entry == "entry-2")
                 .times(1)
                 .return_const(Ok(BTreeMap::new()));
+            visitor
+                .expect_entry_status()
+                .with(eq("entry-1"))
+                .return_const(Ok(None));
+
+            let result = start_loading(src_bucket, QueryParams::default(), visitor).await;
+            assert!(result.is_ok());
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_downloading_skips_entries_blocked_before_copy(
+            #[future] src_bucket: Bucket,
+            mut visitor: MockVisitor,
+        ) {
+            let src_bucket = src_bucket.await;
+            visitor
+                .expect_copy_records()
+                .times(1)
+                .withf(|entry, _record| entry == "entry-2")
+                .return_const(Ok(BTreeMap::new()));
+
+            let blocked_entries = HashMap::from([(
+                "entry-1".to_string(),
+                "Destination entry 'entry-1' is being deleted".to_string(),
+            )]);
+
+            start_loading_with_entry_start_overrides(
+                src_bucket,
+                QueryParams::default(),
+                None,
+                blocked_entries,
+                visitor,
+            )
+            .await
+            .unwrap();
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_downloading_fails_entry_when_conflict_is_deleting(
+            #[future] src_bucket: Bucket,
+            mut visitor: MockVisitor,
+        ) {
+            let src_bucket = src_bucket.await;
+            visitor
+                .expect_copy_records()
+                .withf(|entry, _record| entry == "entry-1")
+                .times(1)
+                .return_const(Err(ReductError::new(ErrorCode::Conflict, "Conflict")));
+            visitor
+                .expect_copy_records()
+                .withf(|entry, _record| entry == "entry-2")
+                .times(1)
+                .return_const(Ok(BTreeMap::new()));
+            visitor
+                .expect_entry_status()
+                .with(eq("entry-1"))
+                .return_const(Ok(Some(ResourceStatus::Deleting)));
 
             let result = start_loading(src_bucket, QueryParams::default(), visitor).await;
             assert!(result.is_ok());
