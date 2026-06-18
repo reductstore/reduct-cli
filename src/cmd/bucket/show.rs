@@ -57,19 +57,15 @@ struct EntryTable {
 
 impl From<EntryInfo> for EntryTable {
     fn from(entry: EntryInfo) -> Self {
-        let status = if entry.record_count == 0 {
-            "⚪ Empty".to_string()
-        } else {
-            "✅ Ready".to_string()
-        };
+        let is_empty = entry.record_count == 0;
         Self {
             name: entry.name,
             record_count: entry.record_count,
             block_count: entry.block_count,
-            status,
+            status: print_bucket_status(&entry.status),
             size: ByteSize(entry.size).display().si().to_string(),
-            oldest_record: timestamp_to_iso(entry.oldest_record, entry.record_count == 0),
-            latest_record: timestamp_to_iso(entry.latest_record, entry.record_count == 0),
+            oldest_record: timestamp_to_iso(entry.oldest_record, is_empty),
+            latest_record: timestamp_to_iso(entry.latest_record, is_empty),
         }
     }
 }
@@ -187,6 +183,7 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
 mod tests {
     use super::*;
     use crate::context::tests::{bucket, context};
+    use reduct_rs::ResourceStatus;
     use rstest::rstest;
 
     #[rstest]
@@ -283,5 +280,41 @@ mod tests {
                 .to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn test_entry_table_uses_entry_status_for_deleting_entries() {
+        let entry = EntryInfo {
+            name: "left_camera/camera_info".to_string(),
+            size: 473_577,
+            record_count: 1000,
+            block_count: 1,
+            oldest_record: 1,
+            latest_record: 1000,
+            status: ResourceStatus::Deleting,
+        };
+
+        let row = EntryTable::from(entry);
+        assert_eq!(row.status, "🗑 Deleting");
+        assert_eq!(row.oldest_record, "1970-01-01T00:00:00Z");
+        assert_eq!(row.latest_record, "1970-01-01T00:00:00Z");
+    }
+
+    #[test]
+    fn test_entry_table_uses_entry_status_for_empty_deleting_entries() {
+        let entry = EntryInfo {
+            name: "left_camera".to_string(),
+            size: 0,
+            record_count: 0,
+            block_count: 0,
+            oldest_record: 0,
+            latest_record: 0,
+            status: ResourceStatus::Deleting,
+        };
+
+        let row = EntryTable::from(entry);
+        assert_eq!(row.status, "🗑 Deleting");
+        assert_eq!(row.oldest_record, "---");
+        assert_eq!(row.latest_record, "---");
     }
 }
