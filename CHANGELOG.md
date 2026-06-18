@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 0.12.2 - 2026-06-18
+
+### Fixed
+
+- Detect destination entries in `Deleting` state before bucket-to-bucket `cp` writes start, and fail late `409 Conflict` writes against deleting entries instead of silently counting them as skipped.
+
 ## 0.12.1 - 2026-06-18
 
 ### Fixed

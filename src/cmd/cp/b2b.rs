@@ -8,7 +8,7 @@ use crate::context::CliContext;
 use crate::io::reduct::build_client;
 use crate::parse::{parse_query_params, Resource};
 use clap::ArgMatches;
-use reduct_rs::{Bucket, ErrorCode, Record, ReductError};
+use reduct_rs::{Bucket, ErrorCode, Record, ReductError, ResourceStatus};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -66,6 +66,16 @@ impl CopyVisitor for CopyToBucketVisitor {
         self.dst_bucket
             .write_attachments(entry_name, attachments)
             .await
+    }
+
+    async fn entry_status(&self, entry_name: &str) -> Result<Option<ResourceStatus>, ReductError> {
+        Ok(self
+            .dst_bucket
+            .entries()
+            .await?
+            .into_iter()
+            .find(|entry| entry.name == entry_name)
+            .map(|entry| entry.status))
     }
 }
 
@@ -130,8 +140,10 @@ pub(crate) async fn cp_bucket_to_bucket_with(
         }
     };
 
+    let destination_entries = dst_bucket.entries().await?;
+    let blocked_entries = build_blocked_entry_errors(&destination_entries);
     let entry_start_overrides = if from_last {
-        Some(build_entry_start_overrides(&dst_bucket).await?)
+        Some(build_entry_start_overrides(&destination_entries))
     } else {
         None
     };
@@ -144,6 +156,7 @@ pub(crate) async fn cp_bucket_to_bucket_with(
         src_bucket,
         query_params,
         entry_start_overrides,
+        blocked_entries,
         dst_bucket_visitor,
     )
     .await
@@ -166,13 +179,30 @@ fn parse_bucket_pair(args: &ArgMatches, key: &str) -> anyhow::Result<(String, St
     }
 }
 
-async fn build_entry_start_overrides(dst_bucket: &Bucket) -> anyhow::Result<HashMap<String, u64>> {
+fn build_blocked_entry_errors(
+    destination_entries: &[reduct_rs::EntryInfo],
+) -> HashMap<String, String> {
+    destination_entries
+        .iter()
+        .filter(|entry| matches!(entry.status, ResourceStatus::Deleting))
+        .map(|entry| {
+            (
+                entry.name.clone(),
+                format!("Destination entry '{}' is being deleted", entry.name),
+            )
+        })
+        .collect()
+}
+
+fn build_entry_start_overrides(
+    destination_entries: &[reduct_rs::EntryInfo],
+) -> HashMap<String, u64> {
     let mut overrides = HashMap::new();
-    for entry in dst_bucket.entries().await? {
+    for entry in destination_entries {
         let start = entry.latest_record.saturating_add(1);
-        overrides.insert(entry.name, start);
+        overrides.insert(entry.name.clone(), start);
     }
-    Ok(overrides)
+    overrides
 }
 
 #[cfg(test)]
@@ -186,6 +216,30 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
+
+    #[test]
+    fn test_build_blocked_entry_errors_marks_deleting_entries() {
+        let entries = vec![
+            reduct_rs::EntryInfo {
+                name: "ready".to_string(),
+                status: ResourceStatus::Ready,
+                ..Default::default()
+            },
+            reduct_rs::EntryInfo {
+                name: "deleting".to_string(),
+                status: ResourceStatus::Deleting,
+                ..Default::default()
+            },
+        ];
+
+        let blocked = build_blocked_entry_errors(&entries);
+        assert_eq!(blocked.len(), 1);
+        assert_eq!(
+            blocked.get("deleting").unwrap(),
+            "Destination entry 'deleting' is being deleted"
+        );
+        assert!(!blocked.contains_key("ready"));
+    }
 
     mod copy_visitor {
         use super::*;
