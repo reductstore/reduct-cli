@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Fixed
+
+- Show actual entry deletion status in `bucket show --full` instead of inferring `Empty`/`Ready` from record counts, [PR-236](https://github.com/reductstore/reduct-cli/pull/236)
+
 ## 0.12.0 - 2026-06-17
 
 ### Added
