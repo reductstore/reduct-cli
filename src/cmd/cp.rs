@@ -44,7 +44,7 @@ pub(crate) fn cp_cmd() -> Command {
             Arg::new("start")
                 .long("start")
                 .short('b')
-                .help("Start timestamp (inclusive) in ISO format or Unix timestamp in microseconds.\nIf not specified, the export will start from the first record in each entry.")
+                .help("Start timestamp (inclusive) as Unix microseconds, RFC3339, local date/datetime, or relative time (e.g. now - 1h).\nIf not specified, the export will start from the first record in each entry.")
                 .required(false)
         )
         .arg(
@@ -58,7 +58,7 @@ pub(crate) fn cp_cmd() -> Command {
             Arg::new("stop")
                 .long("stop")
                 .short('e')
-                .help("Stop timestamp (inclusive) in ISO format or Unix timestamp in microseconds.\nIf not specified, the export will end at the last record in each entry.")
+                .help("Stop timestamp (inclusive) as Unix microseconds, RFC3339, local date/datetime, or relative time (e.g. now - 1h).\nIf not specified, the export will end at the last record in each entry.")
                 .required(false)
         )
         .arg(make_entries_arg())
