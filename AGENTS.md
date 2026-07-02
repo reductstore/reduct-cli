@@ -9,15 +9,15 @@
 - Tests are embedded in modules using `#[cfg(test)]` blocks (no top-level `tests/` directory).
 
 ## Build, Test, and Development Commands
-- `cargo build` — compile the CLI in debug mode.
+- `cargo build --locked` — compile the CLI in debug mode with the checked-in lockfile.
 - `cargo run -- <args>` — run the CLI locally (example: `cargo run -- server status <alias>`).
-- `cargo test` — run unit tests embedded in modules.
+- `cargo test --locked` — run unit tests embedded in modules with the checked-in lockfile.
 - `cargo fmt` — format code with rustfmt (standard Rust formatting).
 - `cargo clippy` — optional linting for common Rust issues.
 - ReductStore for integration tests (mirrors CI):
   - `docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d reduct/store:latest`
   - `docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d reduct/store:main`
-  - `RS_API_TOKEN=TOKEN cargo test -- --test-threads=1`
+  - `RS_API_TOKEN=TOKEN cargo test --locked -- --test-threads=1`
 
 ## Coding Style & Naming Conventions
 - Rust 2021 edition; keep code formatted with rustfmt.
@@ -32,7 +32,7 @@
 
 ## Commit & Pull Request Guidelines
 - Commit subjects are short and imperative; dependency updates follow the pattern `Bump <crate> from <old> to <new> (#NN)`.
-- PRs should include: a clear description, rationale, and test coverage notes (e.g., `cargo test`).
+- PRs should include: a clear description, rationale, and test coverage notes (e.g., `cargo test --locked`).
 - Link related issues or discussions when applicable.
 
 ## Configuration Tips

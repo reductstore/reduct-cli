@@ -22,7 +22,7 @@ blob data.
 ### From Cargo
 
 ```shell
-cargo install reduct-cli
+cargo install --locked reduct-cli
 ```
 
 ### From Snap

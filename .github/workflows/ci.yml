@@ -28,8 +28,10 @@ jobs:
     name: Rust Linter
     steps:
       - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1/stable
       - name: Check code
-        run: cargo fmt --all -- --check
+        run: cargo fmt --all --check
 
   build:
     name: Build binaries
@@ -75,7 +77,6 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1/stable
         with:
-          toolchain: ${{ vars.MINIMAL_RUST_VERSION }}
           target: ${{ matrix.target }}
 
       - name: Install gcc
@@ -101,7 +102,7 @@ jobs:
       - name: Build binary
         env:
           RUSTFLAGS: "-C target-feature=+crt-static"
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Upload binary
         uses: actions/upload-artifact@v6
@@ -119,8 +120,6 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1/stable
-        with:
-          toolchain: ${{ vars.MINIMAL_RUST_VERSION }}
 
       - name: AWS Credentials and Cargo Cache
         uses: ./.github/actions/aws-cargo-cache
@@ -132,7 +131,7 @@ jobs:
       - name: Run ReductStore
         run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{env.REGISTRY_IMAGE}}:main
       - name: Run Client CLI tests
-        run: RS_API_TOKEN=TOKEN cargo test  -- --test-threads=1
+        run: RS_API_TOKEN=TOKEN cargo test --locked -- --test-threads=1
 
 
   check_tag:
@@ -140,12 +139,15 @@ jobs:
     name: Check tag
     steps:
       - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1/stable
       - name: Check tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          cargo install cargo-get
-          if [ "v$(cargo get package.version)" != "${GITHUB_REF#refs/*/}" ]; then
-            echo "Tag does not match version in $PKG_NAME/Cargo.toml"
+          set -euo pipefail
+          version=$(cargo metadata --format-version 1 --no-deps --locked | jq -r '.packages[] | select(.name == "reduct-cli") | .version')
+          if [ "v${version}" != "${GITHUB_REF#refs/*/}" ]; then
+            echo "Tag ${GITHUB_REF#refs/*/} does not match Cargo.toml version ${version}"
             exit 1
           fi
 
@@ -161,13 +163,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # v1/stable
-        with:
-          toolchain: ${{ vars.MINIMAL_RUST_VERSION }}
       - name: Login
         run: |
           cargo login ${{ secrets.CRATES_IO_TOKEN }}
       - name: Publish reduct-cli
-        run: cargo publish -p reduct-cli --allow-dirty
+        run: cargo publish -p reduct-cli --locked --allow-dirty
 
   make_release:
     runs-on: ubuntu-latest
