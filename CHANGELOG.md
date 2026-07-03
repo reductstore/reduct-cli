@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Changed
+
+- Pin the repo Rust toolchain to `1.91.0`, require locked Cargo resolution in CI/pre-commit/install examples/publish flows, and replace the tag-version `cargo-get` install step with repo-local `cargo metadata` verification.
+
 ## 0.12.2 - 2026-06-18
 
 ### Fixed

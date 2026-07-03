@@ -14,6 +14,8 @@ repos:
     hooks:
       - id: fmt
       - id: cargo-check
+        args:
+          - --locked
 
   - repo: local
     hooks:
