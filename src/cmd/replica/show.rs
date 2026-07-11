@@ -80,6 +80,14 @@ pub(super) async fn show_replica_handler(
         labeled_cell("Source Bucket", replica.settings.src_bucket.clone()),
         labeled_cell("Destination Bucket", replica.settings.dst_bucket.clone()),
         labeled_cell("Destination Server", replica.settings.dst_host.clone()),
+        labeled_cell(
+            "Destination Prefix",
+            if replica.settings.dst_prefix.is_empty() {
+                "None".to_string()
+            } else {
+                replica.settings.dst_prefix.clone()
+            },
+        ),
         labeled_cell("Entries", format!("{:?}", replica.settings.entries)),
     ];
 
@@ -154,6 +162,7 @@ mod tests {
             labeled_cell("Source Bucket", "test_bucket"),
             labeled_cell("Destination Bucket", "test_bucket_2"),
             labeled_cell("Destination Server", "http://localhost:8383"),
+            labeled_cell("Destination Prefix", "robot-1"),
             labeled_cell("Entries", "[]"),
             "When: None".to_string(),
         ]);

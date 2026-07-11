@@ -11,7 +11,7 @@ blob data.
 
 ## Features
 
-* Support for ReductStore API v1.20
+* Support for ReductStore API v1.21
 * Easy management of buckets, tokens, replications and lifecycle policies
 * Ability to check the status of a storage engine
 * Aliases for storing server credentials
@@ -64,6 +64,12 @@ reduct-cli server status play
 reduct-cli bucket ls --full play
 reduct-cli cp play/datasets ./datasets --limit 100
 reduct-cli cp play/* backup
+```
+
+Replication destinations can be namespaced with `--prefix`:
+
+```shell
+reduct-cli replica create local/edge source remote/archive --prefix robot-1
 ```
 
 For more examples, see the [Guides](https://www.reduct.store/docs/guides) section in the ReductStore documentation.

@@ -19,8 +19,16 @@ use crate::cmd::replica::mode::{
 use crate::cmd::replica::rm::{rm_replica_cmd, rm_replica_handler};
 use crate::cmd::replica::show::{show_replica_cmd, show_replica_handler};
 use crate::cmd::replica::update::{update_replica_cmd, update_replica_handler};
-use clap::Command;
+use clap::{Arg, Command};
 use create::{create_replica, create_replica_cmd};
+
+fn make_prefix_arg() -> Arg {
+    Arg::new("prefix")
+        .long("prefix")
+        .value_name("PREFIX")
+        .help("Prefix added to destination entry names")
+        .required(false)
+}
 
 pub(crate) fn replication_cmd() -> Command {
     Command::new("replica")
@@ -75,6 +83,7 @@ mod tests {
             .dst_host("http://localhost:8383")
             .src_bucket(bucket)
             .dst_bucket(bucket2)
+            .dst_prefix("robot-1")
             .send()
             .await?;
 
