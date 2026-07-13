@@ -3,9 +3,10 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
+use crate::parse::widely_used_args::{make_each_n, make_entries_arg, make_when_arg};
 use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, Command};
 use reduct_rs::ReplicationSettings;
@@ -33,7 +34,7 @@ pub(super) fn create_replica_cmd() -> Command {
         )
         .arg(make_entries_arg())
         .arg(make_each_n())
-        .arg(make_each_s())
+        .arg(make_prefix_arg())
         .arg(make_when_arg())
 }
 
@@ -59,7 +60,7 @@ pub(super) async fn create_replica(
         .collect::<Vec<String>>();
 
     let each_n = args.get_one::<u64>("each-n");
-    let each_s = args.get_one::<f64>("each-s");
+    let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
 
     let client = build_client(ctx, &alias_or_url).await?;
@@ -72,7 +73,7 @@ pub(super) async fn create_replica(
     settings.dst_token = Some(token);
     settings.entries = entries_filter;
     settings.each_n = each_n.copied();
-    settings.each_s = each_s.copied();
+    settings.dst_prefix = prefix.cloned().unwrap_or_default();
 
     if let Some(when) = when {
         settings.when = Some(serde_json::from_str(&when)?);
@@ -119,8 +120,8 @@ mod tests {
             "entry2",
             "--each-n",
             "10",
-            "--each-s",
-            "0.5",
+            "--prefix",
+            "robot-1",
             "--when",
             r#"{"&label": {"$gt": 10}}"#,
         ]);
@@ -136,7 +137,7 @@ mod tests {
             "Keep compatibility with v1.16"
         );
         assert_eq!(replica.settings.each_n, Some(10));
-        assert_eq!(replica.settings.each_s, Some(0.5));
+        assert_eq!(replica.settings.dst_prefix, "robot-1");
         assert_eq!(
             replica.settings.when.unwrap(),
             json!({"&label": {"$gt": 10}})
@@ -153,5 +154,51 @@ mod tests {
             "local/test_bucket_2",
         ]);
         assert!(args.is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_replica_without_prefix(
+        context: crate::context::CliContext,
+        #[future] replica: String,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+    ) {
+        let test_replica = replica.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket).send().await.unwrap();
+        client.create_bucket(&bucket2).send().await.unwrap();
+
+        let args = create_replica_cmd()
+            .try_get_matches_from([
+                "create".to_string(),
+                format!("local/{test_replica}"),
+                bucket,
+                format!("local/{bucket2}"),
+            ])
+            .unwrap();
+        create_replica(&context, &args).await.unwrap();
+
+        let replica = client.get_replication(&test_replica).await.unwrap();
+        assert!(replica.settings.dst_prefix.is_empty());
+    }
+
+    #[test]
+    fn test_create_replica_with_prefix() {
+        let args = create_replica_cmd()
+            .try_get_matches_from([
+                "create",
+                "local/test_replica",
+                "source",
+                "local/destination",
+                "--prefix",
+                "robot-1",
+            ])
+            .unwrap();
+
+        assert_eq!(args.get_one::<String>("prefix").unwrap(), "robot-1");
     }
 }

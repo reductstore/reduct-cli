@@ -7,9 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- Add destination prefixes to replica create, update, and show commands, [PR-247](https://github.com/reductstore/reduct-cli/pull/247) by @ychampion
+
 ### Changed
 
 - Pin the repo Rust toolchain to `1.91.0`, require locked Cargo resolution in CI/pre-commit/install examples/publish flows, and replace the tag-version `cargo-get` install step with repo-local `cargo metadata` verification.
+- Align replica commands with API v1.21 by removing the deprecated `--each-s` option.
 
 ## 0.12.2 - 2026-06-18
 

@@ -3,10 +3,11 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{make_each_n, make_each_s, make_entries_arg, make_when_arg};
+use crate::parse::widely_used_args::{make_each_n, make_entries_arg, make_when_arg};
 use crate::parse::{Resource, ResourcePathParser};
 
 use clap::{Arg, ArgMatches, Command};
@@ -37,7 +38,7 @@ pub(super) fn update_replica_cmd() -> Command {
         )
         .arg(make_entries_arg())
         .arg(make_each_n())
-        .arg(make_each_s())
+        .arg(make_prefix_arg())
         .arg(make_when_arg())
 }
 
@@ -80,7 +81,7 @@ fn update_replication_settings(
         .map(|s| s.map(|s| s.to_string()).collect::<Vec<String>>());
 
     let each_n = args.get_one::<u64>("each-n");
-    let each_s = args.get_one::<f64>("each-s");
+    let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
 
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
@@ -100,8 +101,8 @@ fn update_replication_settings(
         current_settings.each_n = Some(*each_n);
     }
 
-    if let Some(each_s) = each_s {
-        current_settings.each_s = Some(*each_s);
+    if let Some(prefix) = prefix {
+        current_settings.dst_prefix = prefix.clone();
     }
 
     if let Some(when) = when {
@@ -142,8 +143,8 @@ mod tests {
                 format!("local/{}", &bucket2).as_str(),
                 "--each-n",
                 "10",
-                "--each-s",
-                "0.5",
+                "--prefix",
+                "robot-2",
             ])
             .unwrap();
 
@@ -160,7 +161,22 @@ mod tests {
         );
         assert!(replica.settings.entries.is_empty());
         assert_eq!(replica.settings.each_n, Some(10));
-        assert_eq!(replica.settings.each_s, Some(0.5));
+        assert_eq!(replica.settings.dst_prefix, "robot-2");
+    }
+
+    #[test]
+    fn test_update_replica_with_prefix() {
+        let args = update_replica_cmd()
+            .try_get_matches_from([
+                "update",
+                "local/test_replica",
+                "local/destination",
+                "--prefix",
+                "robot-2",
+            ])
+            .unwrap();
+
+        assert_eq!(args.get_one::<String>("prefix").unwrap(), "robot-2");
     }
 
     mod update_settings {
@@ -260,6 +276,43 @@ mod tests {
             );
         }
 
+        #[rstest]
+        fn override_prefix(context: CliContext, current_settings: ReplicationSettings) {
+            let args = update_replica_cmd()
+                .try_get_matches_from([
+                    "update",
+                    "local/test_replica",
+                    "local/bucket2",
+                    "--prefix",
+                    "robot-2",
+                ])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings.clone()).unwrap();
+            assert_eq!(
+                new_settings,
+                ReplicationSettings {
+                    dst_prefix: "robot-2".to_string(),
+                    ..current_settings
+                }
+            );
+        }
+
+        #[rstest]
+        fn preserve_prefix_when_omitted(
+            context: CliContext,
+            current_settings: ReplicationSettings,
+        ) {
+            let args = update_replica_cmd()
+                .try_get_matches_from(["update", "local/test_replica", "local/bucket2"])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings).unwrap();
+            assert_eq!(new_settings.dst_prefix, "robot-1");
+        }
+
         #[fixture]
         fn current_settings(current_token: String) -> ReplicationSettings {
             ReplicationSettings {
@@ -267,10 +320,10 @@ mod tests {
                 dst_bucket: "bucket2".to_string(),
                 dst_host: "http://localhost:8383/".to_string(),
                 dst_token: Some(current_token),
+                dst_prefix: "robot-1".to_string(),
                 include: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
                 exclude: Labels::from_iter(vec![("key2".to_string(), "value2".to_string())]),
                 each_n: None,
-                each_s: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
                 when: None,
                 mode: Default::default(),
