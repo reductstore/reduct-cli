@@ -66,12 +66,6 @@ reduct-cli cp play/datasets ./datasets --limit 100
 reduct-cli cp play/* backup
 ```
 
-Replication destinations can be namespaced with `--prefix`:
-
-```shell
-reduct-cli replica create local/edge source remote/archive --prefix robot-1
-```
-
 For more examples, see the [Guides](https://www.reduct.store/docs/guides) section in the ReductStore documentation.
 
 
