@@ -68,6 +68,37 @@ reduct-cli cp play/* backup
 
 For more examples, see the [Guides](https://www.reduct.store/docs/guides) section in the ReductStore documentation.
 
+## Community & Contribution
+
+If you've found a bug, have ideas, built something with ReductStore CLI, or want to contribute directly, here are the best
+places to jump in:
+
+* **Questions and Ideas**: Join our [**Discourse community**](https://community.reduct.store) to ask questions, share ideas,
+  and collaborate with fellow ReductStore users.
+* **Bug Reports**: Open an issue on our **[GitHub repository](https://github.com/reductstore/reduct-cli/issues)**. Please
+  include the ReductStore CLI version, ReductStore server version, the command you ran, and the output or error message.
+* **First Contributions**: Pick a task from
+  [**good first issues**](https://github.com/reductstore/reduct-cli/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22good%20first%20issue%22)
+  or [**help wanted**](https://github.com/reductstore/reduct-cli/issues?q=is%3Aissue%20is%3Aopen%20label%3A%22help%20wanted%22).
+* **Pull Requests**: Open PRs only for an existing issue. Comment on the issue and get assigned before you start work. Use
+  the repository pull request template when you open the PR, and update `CHANGELOG.md` for user-visible changes. If you
+  want to propose a new feature or workflow, open an issue first or start the discussion on the
+  [**community forum**](https://community.reduct.store) before writing code.
+* **Show Your Work**: Share your projects, benchmarks, and lessons learned on our
+  [**Discourse community**](https://community.reduct.store).
+* **Support the Project**: If ReductStore CLI is useful to you, give us a ⭐ on GitHub.
+
+## Contributors
+
+Thanks to everyone who has contributed to ReductStore CLI.
+
+<p align="center">
+  <a href="https://github.com/atimin"><img src="https://avatars.githubusercontent.com/u/67068?v=4" width="48" height="48" alt="@atimin" /></a>
+  <a href="https://github.com/AnthonyCvn"><img src="https://avatars.githubusercontent.com/u/26444489?v=4" width="48" height="48" alt="@AnthonyCvn" /></a>
+  <a href="https://github.com/Rumpelshtinskiy"><img src="https://avatars.githubusercontent.com/u/12251146?v=4" width="48" height="48" alt="@Rumpelshtinskiy" /></a>
+  <a href="https://github.com/szabgab"><img src="https://avatars.githubusercontent.com/u/48833?v=4" width="48" height="48" alt="@szabgab" /></a>
+  <a href="https://github.com/ychampion"><img src="https://avatars.githubusercontent.com/u/68075205?v=4" width="48" height="48" alt="@ychampion" /></a>
+</p>
 
 ## Links
 
