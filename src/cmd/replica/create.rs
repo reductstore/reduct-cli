@@ -215,4 +215,54 @@ mod tests {
 
         assert_eq!(args.get_one::<String>("prefix").unwrap(), "robot-1");
     }
+
+    #[rstest]
+    #[case("zstd", reduct_rs::ReplicationCompression::Zstd)]
+    #[case("gzip", reduct_rs::ReplicationCompression::Gzip)]
+    #[case("none", reduct_rs::ReplicationCompression::None)]
+    #[tokio::test]
+    async fn test_create_replica_compression_methods(
+        context: crate::context::CliContext,
+        #[future] replica: String,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+        #[case] compression: &str,
+        #[case] expected: reduct_rs::ReplicationCompression,
+    ) {
+        let test_replica = replica.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket).send().await.unwrap();
+        client.create_bucket(&bucket2).send().await.unwrap();
+
+        let args = create_replica_cmd().get_matches_from(vec![
+            "create",
+            format!("local/{}", test_replica).as_str(),
+            &bucket,
+            format!("local/{}", bucket2).as_str(),
+            "--compression",
+            compression,
+        ]);
+        create_replica(&context, &args).await.unwrap();
+
+        let replica = client.get_replication(&test_replica).await.unwrap();
+        assert_eq!(replica.settings.compression, expected);
+    }
+
+    #[test]
+    fn test_create_replica_with_invalid_compression() {
+        let args = create_replica_cmd().try_get_matches_from([
+            "create",
+            "local/test_replica",
+            "source",
+            "local/destination",
+            "--compression",
+            "invalid",
+        ]);
+        assert!(args.is_err());
+        let err = args.unwrap_err();
+        assert!(err.to_string().contains("invalid compression method"));
+    }
 }
