@@ -62,7 +62,7 @@ Check with our [demo server](https://play.reduct.store):
 reduct-cli alias add play -L  https://play.reduct.store/replica -t reductstore
 reduct-cli server status play
 reduct-cli bucket ls --full play
-reduct-cli cp play/datasets ./datasets --limit 100
+reduct-cli cp play/datasets ./datasets --start "now-2h" --stop "now-1h"
 reduct-cli cp play/* backup
 ```
 
