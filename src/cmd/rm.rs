@@ -46,7 +46,7 @@ pub(crate) fn rm_cmd() -> Command {
             Arg::new("stop")
                 .long("stop")
                 .short('e')
-                .help("Remove records with timestamps newer than this time point as Unix microseconds, RFC3339, local date/datetime, or relative time (e.g. now - 1h).\nIf not specified, the export will end at the last record in an entry.")
+                .help("Remove records with timestamps newer than this time point as Unix microseconds, RFC3339, local date/datetime, or relative time (e.g. now - 1h). Defaults to now.")
                 .required(false)
         )
         .arg(make_entries_arg())

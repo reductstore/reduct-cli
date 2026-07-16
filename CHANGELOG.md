@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add destination prefixes to replica create, update, and show commands, [PR-247](https://github.com/reductstore/reduct-cli/pull/247) by @ychampion
+- Improve time parsing for --start and --stop options, [PR-226](https://github.com/reductstore/reduct-cli/pull/226) by @yaslam-dev
 
 ### Changed
 

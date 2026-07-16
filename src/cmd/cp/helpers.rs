@@ -598,7 +598,10 @@ fn build_progress_metric(
     if let Some(limit) = query_limit(query_params) {
         let total = entries
             .iter()
-            .map(|entry| entry.record_count.min(limit))
+            .filter_map(|entry| {
+                entry_time_window(entry, query_params, entry_start_overrides)
+                    .map(|_| entry.record_count.min(limit))
+            })
             .sum::<u64>()
             .max(1);
         return ProgressMetric::Records { total };
@@ -649,6 +652,15 @@ async fn run_entry_copy<V: CopyVisitor + Sync + ?Sized>(
     bucket_progress: Arc<AsyncMutex<BucketProgress>>,
     copied_attachments: Arc<AsyncMutex<HashSet<String>>>,
 ) -> EntryCopyOutcome {
+    // A start/stop window can exclude an entry entirely. Avoid sending a query
+    // whose start is after the server's implicit stop (the latest record).
+    if entry.record_count > 0 && entry_time_window(&entry, &params, None).is_none() {
+        return EntryCopyOutcome {
+            entry_name: entry.name,
+            result: Ok(()),
+        };
+    }
+
     // Copy one entry with retry logic and bounded batching to control memory usage.
     let mut timestamp = params.start.unwrap_or(entry.oldest_record);
     let mut record_count = 0;
@@ -1020,6 +1032,22 @@ mod tests {
                 }
                 ProgressMetric::Records { .. } => panic!("expected time progress"),
             }
+        }
+
+        #[test]
+        fn test_entry_time_window_excludes_entry_before_start() {
+            let entry = EntryInfo {
+                oldest_record: 100,
+                latest_record: 200,
+                record_count: 101,
+                ..Default::default()
+            };
+            let params = QueryParams {
+                start: Some(300),
+                ..Default::default()
+            };
+
+            assert!(entry_time_window(&entry, &params, None).is_none());
         }
 
         #[test]
