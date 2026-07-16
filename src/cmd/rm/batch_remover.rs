@@ -104,7 +104,7 @@ mod tests {
                 .err()
                 .unwrap()
                 .to_string(),
-            "Failed to parse time xxx: premature end of input"
+            "Failed to parse time xxx: expected Unix microseconds, RFC3339, local datetime, or local date"
         );
     }
 }
