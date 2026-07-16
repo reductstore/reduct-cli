@@ -5,6 +5,7 @@
 
 use clap::ArgAction::SetTrue;
 use clap::{value_parser, Arg};
+use reduct_rs::ReplicationCompression;
 
 pub(crate) fn make_each_n() -> Arg {
     Arg::new("each-n")
@@ -63,4 +64,24 @@ pub(crate) fn make_ext_arg() -> Arg {
         .value_name("EXT_PARAMETERS")
         .help("Pass additional parameters to extensions in JSON format.")
         .required(false)
+}
+
+pub(crate) fn make_compression_arg() -> Arg {
+    Arg::new("compression")
+        .long("compression")
+        .short('c')
+        .value_name("COMPRESSION")
+        .value_parser(parse_compression_method)
+        .default_value("none")
+        .help("Replication payload compression: gzip, zstd.")
+        .required(false)
+}
+
+fn parse_compression_method(value: &str) -> Result<ReplicationCompression, String> {
+    match value {
+        "zstd" => Ok(ReplicationCompression::Zstd),
+        "gzip" => Ok(ReplicationCompression::Gzip),
+        "none" => Ok(ReplicationCompression::None),
+        _ => Err(format!("invalid compression method '{value}'")),
+    }
 }

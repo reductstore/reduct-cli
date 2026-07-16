@@ -7,11 +7,13 @@ use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{make_each_n, make_entries_arg, make_when_arg};
+use crate::parse::widely_used_args::{
+    make_compression_arg, make_each_n, make_entries_arg, make_when_arg,
+};
 use crate::parse::{Resource, ResourcePathParser};
 
 use clap::{Arg, ArgMatches, Command};
-use reduct_rs::ReplicationSettings;
+use reduct_rs::{ReplicationCompression, ReplicationSettings};
 
 pub(super) fn update_replica_cmd() -> Command {
     Command::new("update")
@@ -40,6 +42,7 @@ pub(super) fn update_replica_cmd() -> Command {
         .arg(make_each_n())
         .arg(make_prefix_arg())
         .arg(make_when_arg())
+        .arg(make_compression_arg())
 }
 
 pub(super) async fn update_replica_handler(
@@ -83,6 +86,7 @@ fn update_replication_settings(
     let each_n = args.get_one::<u64>("each-n");
     let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
+    let compression = args.get_one::<ReplicationCompression>("compression");
 
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
     current_settings.dst_bucket = dest_bucket_name.clone();
@@ -109,6 +113,10 @@ fn update_replication_settings(
         current_settings.when = serde_json::from_str(&when)?;
     }
 
+    if let Some(compression) = compression {
+        current_settings.compression = compression.clone();
+    }
+
     Ok(current_settings)
 }
 
@@ -117,7 +125,6 @@ mod tests {
     use super::*;
     use crate::cmd::replica::tests::prepare_replication;
     use crate::context::tests::{bucket, bucket2, context, replica};
-    use reduct_rs::Labels;
     use rstest::rstest;
 
     #[rstest]
@@ -145,6 +152,8 @@ mod tests {
                 "10",
                 "--prefix",
                 "robot-2",
+                "--compression",
+                "zstd",
             ])
             .unwrap();
 
@@ -162,6 +171,7 @@ mod tests {
         assert!(replica.settings.entries.is_empty());
         assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.dst_prefix, "robot-2");
+        assert_eq!(replica.settings.compression, ReplicationCompression::Zstd);
     }
 
     #[test]
@@ -177,6 +187,57 @@ mod tests {
             .unwrap();
 
         assert_eq!(args.get_one::<String>("prefix").unwrap(), "robot-2");
+    }
+
+    #[rstest]
+    #[case("zstd", ReplicationCompression::Zstd)]
+    #[case("gzip", ReplicationCompression::Gzip)]
+    #[case("none", ReplicationCompression::None)]
+    #[tokio::test]
+    async fn test_update_replica_compression_methods(
+        context: CliContext,
+        #[future] replica: String,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+        #[case] compression: &str,
+        #[case] expected: ReplicationCompression,
+    ) {
+        let test_replica = replica.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let client = prepare_replication(&context, &test_replica, &bucket, &bucket2)
+            .await
+            .unwrap();
+
+        let args = update_replica_cmd()
+            .try_get_matches_from(vec![
+                "update",
+                format!("local/{}", test_replica).as_str(),
+                format!("local/{}", &bucket2).as_str(),
+                "--compression",
+                compression,
+            ])
+            .unwrap();
+
+        update_replica_handler(&context, &args).await.unwrap();
+
+        let replica = client.get_replication(&test_replica).await.unwrap();
+        assert_eq!(replica.settings.compression, expected);
+    }
+
+    #[test]
+    fn test_update_replica_with_invalid_compression() {
+        let args = update_replica_cmd().try_get_matches_from([
+            "update",
+            "local/test_replica",
+            "local/destination",
+            "--compression",
+            "invalid",
+        ]);
+        assert!(args.is_err());
+        let err = args.unwrap_err();
+        assert!(err.to_string().contains("invalid compression method"));
     }
 
     mod update_settings {
@@ -202,6 +263,7 @@ mod tests {
                 new_settings,
                 ReplicationSettings {
                     src_bucket: "bucket3".to_string(),
+                    compression: ReplicationCompression::None,
                     ..current_settings
                 }
             );
@@ -225,6 +287,7 @@ mod tests {
                     dst_bucket: "bucket3".to_string(),
                     dst_host: "http://localhost:8383/".to_string(),
                     dst_token: Some(current_token),
+                    compression: ReplicationCompression::None,
                     ..current_settings
                 }
             );
@@ -248,6 +311,7 @@ mod tests {
                 new_settings,
                 ReplicationSettings {
                     entries: vec!["entry3".to_string()],
+                    compression: ReplicationCompression::None,
                     ..current_settings
                 }
             );
@@ -271,6 +335,7 @@ mod tests {
                 new_settings,
                 ReplicationSettings {
                     when: Some(serde_json::json!({"&label": {"$gt": 20}})),
+                    compression: ReplicationCompression::None,
                     ..current_settings
                 }
             );
@@ -294,6 +359,7 @@ mod tests {
                 new_settings,
                 ReplicationSettings {
                     dst_prefix: "robot-2".to_string(),
+                    compression: ReplicationCompression::None,
                     ..current_settings
                 }
             );
@@ -313,6 +379,45 @@ mod tests {
             assert_eq!(new_settings.dst_prefix, "robot-1");
         }
 
+        #[rstest]
+        #[case("zstd", ReplicationCompression::Zstd)]
+        #[case("gzip", ReplicationCompression::Gzip)]
+        #[case("none", ReplicationCompression::None)]
+        fn override_compression(
+            context: CliContext,
+            current_settings: ReplicationSettings,
+            #[case] compression: &str,
+            #[case] expected: ReplicationCompression,
+        ) {
+            let args = update_replica_cmd()
+                .try_get_matches_from(vec![
+                    "update",
+                    "local/test_replica",
+                    "local/bucket2",
+                    "--compression",
+                    compression,
+                ])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings).unwrap();
+            assert_eq!(new_settings.compression, expected);
+        }
+
+        #[rstest]
+        fn preserve_compression_when_omitted(
+            context: CliContext,
+            current_settings: ReplicationSettings,
+        ) {
+            let args = update_replica_cmd()
+                .try_get_matches_from(["update", "local/test_replica", "local/bucket2"])
+                .unwrap();
+
+            let new_settings =
+                update_replication_settings(&context, &args, current_settings).unwrap();
+            assert_eq!(new_settings.compression, ReplicationCompression::None);
+        }
+
         #[fixture]
         fn current_settings(current_token: String) -> ReplicationSettings {
             ReplicationSettings {
@@ -321,12 +426,11 @@ mod tests {
                 dst_host: "http://localhost:8383/".to_string(),
                 dst_token: Some(current_token),
                 dst_prefix: "robot-1".to_string(),
-                include: Labels::from_iter(vec![("key1".to_string(), "value1".to_string())]),
-                exclude: Labels::from_iter(vec![("key2".to_string(), "value2".to_string())]),
                 each_n: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
                 when: None,
                 mode: Default::default(),
+                compression: ReplicationCompression::Gzip,
             }
         }
     }

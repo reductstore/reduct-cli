@@ -6,10 +6,12 @@
 use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{make_each_n, make_entries_arg, make_when_arg};
+use crate::parse::widely_used_args::{
+    make_compression_arg, make_each_n, make_entries_arg, make_when_arg,
+};
 use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, Command};
-use reduct_rs::ReplicationSettings;
+use reduct_rs::{ReplicationCompression, ReplicationSettings};
 
 pub(super) fn create_replica_cmd() -> Command {
     Command::new("create")
@@ -36,6 +38,7 @@ pub(super) fn create_replica_cmd() -> Command {
         .arg(make_each_n())
         .arg(make_prefix_arg())
         .arg(make_when_arg())
+        .arg(make_compression_arg())
 }
 
 pub(super) async fn create_replica(
@@ -63,6 +66,10 @@ pub(super) async fn create_replica(
     let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
 
+    let compression = args
+        .get_one::<ReplicationCompression>("compression")
+        .unwrap();
+
     let client = build_client(ctx, &alias_or_url).await?;
     let (dest_url, token) = parse_url_and_token(ctx, &dest_alias_or_url)?;
 
@@ -74,6 +81,7 @@ pub(super) async fn create_replica(
     settings.entries = entries_filter;
     settings.each_n = each_n.copied();
     settings.dst_prefix = prefix.cloned().unwrap_or_default();
+    settings.compression = *compression;
 
     if let Some(when) = when {
         settings.when = Some(serde_json::from_str(&when)?);
@@ -124,6 +132,8 @@ mod tests {
             "robot-1",
             "--when",
             r#"{"&label": {"$gt": 10}}"#,
+            "--compression",
+            "gzip",
         ]);
         create_replica(&context, &args).await.unwrap();
 
@@ -141,6 +151,10 @@ mod tests {
         assert_eq!(
             replica.settings.when.unwrap(),
             json!({"&label": {"$gt": 10}})
+        );
+        assert_eq!(
+            replica.settings.compression,
+            reduct_rs::ReplicationCompression::Gzip
         );
     }
 
@@ -200,5 +214,55 @@ mod tests {
             .unwrap();
 
         assert_eq!(args.get_one::<String>("prefix").unwrap(), "robot-1");
+    }
+
+    #[rstest]
+    #[case("zstd", reduct_rs::ReplicationCompression::Zstd)]
+    #[case("gzip", reduct_rs::ReplicationCompression::Gzip)]
+    #[case("none", reduct_rs::ReplicationCompression::None)]
+    #[tokio::test]
+    async fn test_create_replica_compression_methods(
+        context: crate::context::CliContext,
+        #[future] replica: String,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+        #[case] compression: &str,
+        #[case] expected: reduct_rs::ReplicationCompression,
+    ) {
+        let test_replica = replica.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket).send().await.unwrap();
+        client.create_bucket(&bucket2).send().await.unwrap();
+
+        let args = create_replica_cmd().get_matches_from(vec![
+            "create",
+            format!("local/{}", test_replica).as_str(),
+            &bucket,
+            format!("local/{}", bucket2).as_str(),
+            "--compression",
+            compression,
+        ]);
+        create_replica(&context, &args).await.unwrap();
+
+        let replica = client.get_replication(&test_replica).await.unwrap();
+        assert_eq!(replica.settings.compression, expected);
+    }
+
+    #[test]
+    fn test_create_replica_with_invalid_compression() {
+        let args = create_replica_cmd().try_get_matches_from([
+            "create",
+            "local/test_replica",
+            "source",
+            "local/destination",
+            "--compression",
+            "invalid",
+        ]);
+        assert!(args.is_err());
+        let err = args.unwrap_err();
+        assert!(err.to_string().contains("invalid compression method"));
     }
 }
