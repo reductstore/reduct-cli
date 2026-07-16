@@ -163,6 +163,7 @@ mod tests {
             labeled_cell("Source Bucket", "test_bucket"),
             labeled_cell("Destination Bucket", "test_bucket_2"),
             labeled_cell("Destination Server", "http://localhost:8383"),
+            labeled_cell("Compression", "None"),
             labeled_cell("Destination Prefix", "robot-1"),
             labeled_cell("Entries", "[]"),
             "When: None".to_string(),
