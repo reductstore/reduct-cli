@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add destination prefixes to replica create, update, and show commands, [PR-247](https://github.com/reductstore/reduct-cli/pull/247) by @ychampion
+- Add compression option to replica create, update, and show commands, [PR-261](https://github.com/reductstore/reduct-cli/pull/261) by @vbmade2000
 
 ### Changed
 
