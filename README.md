@@ -95,9 +95,11 @@ Thanks to everyone who has contributed to ReductStore CLI.
 <p align="center">
   <a href="https://github.com/atimin"><img src="https://avatars.githubusercontent.com/u/67068?v=4" width="48" height="48" alt="@atimin" /></a>
   <a href="https://github.com/AnthonyCvn"><img src="https://avatars.githubusercontent.com/u/26444489?v=4" width="48" height="48" alt="@AnthonyCvn" /></a>
-  <a href="https://github.com/Rumpelshtinskiy"><img src="https://avatars.githubusercontent.com/u/12251146?v=4" width="48" height="48" alt="@Rumpelshtinskiy" /></a>
   <a href="https://github.com/szabgab"><img src="https://avatars.githubusercontent.com/u/48833?v=4" width="48" height="48" alt="@szabgab" /></a>
+  <a href="https://github.com/vbmade2000"><img src="https://avatars.githubusercontent.com/u/1904995?v=4" width="48" height="48" alt="@vbmade2000" /></a>
+  <a href="https://github.com/Rumpelshtinskiy"><img src="https://avatars.githubusercontent.com/u/12251146?v=4" width="48" height="48" alt="@Rumpelshtinskiy" /></a>
   <a href="https://github.com/ychampion"><img src="https://avatars.githubusercontent.com/u/68075205?v=4" width="48" height="48" alt="@ychampion" /></a>
+  <a href="https://github.com/yaslam-dev"><img src="https://avatars.githubusercontent.com/u/26070254?v=4" width="48" height="48" alt="@yaslam-dev" /></a>
 </p>
 
 ## Links
