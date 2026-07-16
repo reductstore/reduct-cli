@@ -80,6 +80,7 @@ pub(super) async fn show_replica_handler(
         labeled_cell("Source Bucket", replica.settings.src_bucket.clone()),
         labeled_cell("Destination Bucket", replica.settings.dst_bucket.clone()),
         labeled_cell("Destination Server", replica.settings.dst_host.clone()),
+        labeled_cell("Compression", format!("{:?}", replica.settings.compression)),
         labeled_cell(
             "Destination Prefix",
             if replica.settings.dst_prefix.is_empty() {
