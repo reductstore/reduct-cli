@@ -12,7 +12,7 @@ mod parse;
 
 use crate::cmd::alias::{alias_cmd, alias_handler};
 use crate::cmd::attachment::{attachment_cmd, attachment_handler};
-use crate::cmd::write::write_cmd;
+use crate::cmd::write::{write_cmd, write_handler};
 use crate::context::ContextBuilder;
 use std::time::Duration;
 
@@ -107,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
         Some(("cp", args)) => cp_handler(&ctx, args).await,
         Some(("rm", args)) => rm_handler(&ctx, args).await,
+        Some(("write", args)) => write_handler(&ctx, args).await,
         _ => Ok(()),
     };
 
