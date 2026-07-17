@@ -6,9 +6,7 @@
 use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{
-    make_compression_arg, make_each_n, make_entries_arg, make_when_arg,
-};
+use crate::parse::widely_used_args::{make_compression_arg, make_entries_arg, make_when_arg};
 use crate::parse::{Resource, ResourcePathParser};
 use clap::{Arg, Command};
 use reduct_rs::{ReplicationCompression, ReplicationSettings};
@@ -35,7 +33,6 @@ pub(super) fn create_replica_cmd() -> Command {
                 .required(true),
         )
         .arg(make_entries_arg())
-        .arg(make_each_n())
         .arg(make_prefix_arg())
         .arg(make_when_arg())
         .arg(make_compression_arg())
@@ -62,7 +59,6 @@ pub(super) async fn create_replica(
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
 
-    let each_n = args.get_one::<u64>("each-n");
     let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
 
@@ -79,7 +75,6 @@ pub(super) async fn create_replica(
     settings.dst_host = dest_url.as_str().to_string();
     settings.dst_token = Some(token);
     settings.entries = entries_filter;
-    settings.each_n = each_n.copied();
     settings.dst_prefix = prefix.cloned().unwrap_or_default();
     settings.compression = *compression;
 
@@ -126,8 +121,6 @@ mod tests {
             "--entries",
             "entry1",
             "entry2",
-            "--each-n",
-            "10",
             "--prefix",
             "robot-1",
             "--when",
@@ -146,7 +139,6 @@ mod tests {
             "***",
             "Keep compatibility with v1.16"
         );
-        assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.dst_prefix, "robot-1");
         assert_eq!(
             replica.settings.when.unwrap(),
