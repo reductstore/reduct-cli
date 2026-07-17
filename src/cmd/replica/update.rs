@@ -7,9 +7,7 @@ use crate::cmd::replica::make_prefix_arg;
 use crate::cmd::RESOURCE_PATH_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::{build_client, parse_url_and_token};
-use crate::parse::widely_used_args::{
-    make_compression_arg, make_each_n, make_entries_arg, make_when_arg,
-};
+use crate::parse::widely_used_args::{make_compression_arg, make_entries_arg, make_when_arg};
 use crate::parse::{Resource, ResourcePathParser};
 
 use clap::{Arg, ArgMatches, Command};
@@ -39,7 +37,6 @@ pub(super) fn update_replica_cmd() -> Command {
                 .required(false),
         )
         .arg(make_entries_arg())
-        .arg(make_each_n())
         .arg(make_prefix_arg())
         .arg(make_when_arg())
         .arg(make_compression_arg())
@@ -83,7 +80,6 @@ fn update_replication_settings(
         .get_many::<String>("entries")
         .map(|s| s.map(|s| s.to_string()).collect::<Vec<String>>());
 
-    let each_n = args.get_one::<u64>("each-n");
     let prefix = args.get_one::<String>("prefix");
     let when = args.get_one::<String>("when");
     let compression = args.get_one::<ReplicationCompression>("compression");
@@ -99,10 +95,6 @@ fn update_replication_settings(
 
     if let Some(entries_filter) = entries_filter {
         current_settings.entries = entries_filter;
-    }
-
-    if let Some(each_n) = each_n {
-        current_settings.each_n = Some(*each_n);
     }
 
     if let Some(prefix) = prefix {
@@ -148,8 +140,6 @@ mod tests {
                 "update",
                 format!("local/{}", test_replica).as_str(),
                 format!("local/{}", &bucket2).as_str(),
-                "--each-n",
-                "10",
                 "--prefix",
                 "robot-2",
                 "--compression",
@@ -169,7 +159,6 @@ mod tests {
             "Keep compatibility with v1.16"
         );
         assert!(replica.settings.entries.is_empty());
-        assert_eq!(replica.settings.each_n, Some(10));
         assert_eq!(replica.settings.dst_prefix, "robot-2");
         assert_eq!(replica.settings.compression, ReplicationCompression::Zstd);
     }
@@ -426,11 +415,11 @@ mod tests {
                 dst_host: "http://localhost:8383/".to_string(),
                 dst_token: Some(current_token),
                 dst_prefix: "robot-1".to_string(),
-                each_n: None,
                 entries: vec!["entry1".to_string(), "entry2".to_string()],
                 when: None,
                 mode: Default::default(),
                 compression: ReplicationCompression::Gzip,
+                ..Default::default()
             }
         }
     }
