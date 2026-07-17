@@ -12,6 +12,7 @@ pub(crate) mod rm;
 pub(crate) mod server;
 pub(crate) mod table;
 pub(crate) mod token;
+pub(crate) mod write;
 
 const ALIAS_OR_URL_HELP: &str =
     "Alias or URL (e.g. http://token@localhost:8383) of the ReductStore instance to use";
