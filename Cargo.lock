@@ -1463,6 +1463,7 @@ dependencies = [
  "mime_guess",
  "mockall",
  "reduct-rs",
+ "regex",
  "rstest",
  "serde",
  "serde_json",
