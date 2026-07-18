@@ -1,7 +1,10 @@
 use clap::{Arg, Command};
 use regex::Regex;
 
-use crate::{context::CliContext, io::reduct::build_client};
+use crate::{
+    context::CliContext,
+    io::{reduct::build_client, std::output},
+};
 
 pub(crate) fn write_cmd() -> Command {
     Command::new("write")
@@ -23,13 +26,21 @@ pub(crate) fn write_cmd() -> Command {
 }
 
 pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
-    println!("write_handler");
-
     let entry_path = args.get_one::<String>("ENTRY_PATH").unwrap().clone();
     let (alias_or_url, bucket_name, entry_name) = parse_entry_path(&entry_path)?;
     let payload = args.get_one::<String>("payload").unwrap().clone();
 
     let client = build_client(ctx, &alias_or_url).await?;
+
+    let bucket = client.get_bucket(&bucket_name).await?;
+    bucket
+        .write_record(&entry_name)
+        .data(payload)
+        .content_type("application/text")
+        .send()
+        .await?;
+
+    output!(ctx, "Record written to '{}/{}' ", bucket_name, entry_name);
 
     Ok(())
 }
