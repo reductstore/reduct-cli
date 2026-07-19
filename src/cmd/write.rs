@@ -3,59 +3,18 @@ use bytesize::ByteSize;
 use clap::{Arg, Command};
 use futures_util::stream::Stream;
 use indicatif::{ProgressBar, ProgressStyle};
-use reduct_rs::{Labels, WriteRecordBuilder};
-use std::collections::HashMap;
+use reduct_rs::WriteRecordBuilder;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::SystemTime;
 use tokio_util::io::ReaderStream;
 
-use crate::parse::parse_time;
+use crate::parse::{parse_labels, parse_time};
 use crate::{
     context::CliContext,
     io::{reduct::build_client, std::output},
     parse::{Resource, ResourcePathParser},
 };
-
-/// Parse labels from either key=value,key=value format or JSON object format
-fn parse_labels(labels_str: &str) -> anyhow::Result<Labels> {
-    let trimmed = labels_str.trim();
-
-    // Try to parse as JSON first
-    if trimmed.starts_with('{') {
-        let labels_map: HashMap<String, String> = serde_json::from_str(trimmed)
-            .map_err(|e| anyhow::anyhow!("Failed to parse labels as JSON: {}", e))?;
-        return Ok(labels_map);
-    }
-
-    // Parse as key=value,key=value format
-    let mut labels = HashMap::new();
-    for pair in trimmed.split(',') {
-        let pair = pair.trim();
-        if pair.is_empty() {
-            continue;
-        }
-
-        let parts: Vec<&str> = pair.splitn(2, '=').collect();
-        if parts.len() != 2 {
-            return Err(anyhow::anyhow!(
-                "Invalid label format '{}': expected key=value",
-                pair
-            ));
-        }
-
-        let key = parts[0].trim();
-        let value = parts[1].trim();
-
-        if key.is_empty() {
-            return Err(anyhow::anyhow!("Label key cannot be empty in '{}'", pair));
-        }
-
-        labels.insert(key.to_string(), value.to_string());
-    }
-
-    Ok(labels)
-}
 
 /// A wrapper stream that tracks upload progress
 struct ProgressStream<S> {
@@ -369,74 +328,5 @@ mod tests {
             .unwrap()
             .as_nanos();
         format!("{}-{}", prefix, nanos)
-    }
-
-    #[test]
-    fn test_parse_labels_key_value_format() {
-        let labels = parse_labels("key1=value1,key2=value2").unwrap();
-        assert_eq!(labels.len(), 2);
-        assert_eq!(labels.get("key1"), Some(&"value1".to_string()));
-        assert_eq!(labels.get("key2"), Some(&"value2".to_string()));
-    }
-
-    #[test]
-    fn test_parse_labels_key_value_with_spaces() {
-        let labels = parse_labels(" key1 = value1 , key2 = value2 ").unwrap();
-        assert_eq!(labels.len(), 2);
-        assert_eq!(labels.get("key1"), Some(&"value1".to_string()));
-        assert_eq!(labels.get("key2"), Some(&"value2".to_string()));
-    }
-
-    #[test]
-    fn test_parse_labels_json_format() {
-        let labels = parse_labels(r#"{"key1":"value1","key2":"value2"}"#).unwrap();
-        assert_eq!(labels.len(), 2);
-        assert_eq!(labels.get("key1"), Some(&"value1".to_string()));
-        assert_eq!(labels.get("key2"), Some(&"value2".to_string()));
-    }
-
-    #[test]
-    fn test_parse_labels_empty_value() {
-        let labels = parse_labels("key1=,key2=value2").unwrap();
-        assert_eq!(labels.len(), 2);
-        assert_eq!(labels.get("key1"), Some(&"".to_string()));
-        assert_eq!(labels.get("key2"), Some(&"value2".to_string()));
-    }
-
-    #[test]
-    fn test_parse_labels_value_with_equals() {
-        let labels = parse_labels("key1=value=with=equals").unwrap();
-        assert_eq!(labels.len(), 1);
-        assert_eq!(labels.get("key1"), Some(&"value=with=equals".to_string()));
-    }
-
-    #[test]
-    fn test_parse_labels_invalid_format() {
-        let result = parse_labels("invalid");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("expected key=value"));
-    }
-
-    #[test]
-    fn test_parse_labels_empty_key() {
-        let result = parse_labels("=value");
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("key cannot be empty"));
-    }
-
-    #[test]
-    fn test_parse_labels_invalid_json() {
-        let result = parse_labels(r#"{"key1":"value1""#);
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("Failed to parse labels as JSON"));
     }
 }
