@@ -6,6 +6,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use reduct_rs::WriteRecordBuilder;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::SystemTime;
 use tokio_util::io::ReaderStream;
 
 use crate::{
@@ -95,25 +96,52 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
 
     let client = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
-    let mut write_record_builder = bucket.write_record(&entry_name);
-
-    if let Some(content_type) = content_type {
-        write_record_builder = write_record_builder.content_type(content_type);
-    }
+    let write_record_builder = bucket.write_record(&entry_name);
 
     // .labels(labels)
     // .timestamp_us(timestamp)
 
     if let Some(path) = args.get_one::<String>("path") {
+        // Check file path validity
+        if !tokio::fs::metadata(path).await?.is_file() {
+            return Err(anyhow::anyhow!("Path '{}' is invalid or not a file", path));
+        }
+
+        // Guess content type from file extension if not provided
+        let content_type = if let Some(ct) = content_type {
+            ct.to_string()
+        } else {
+            let extension = std::path::Path::new(path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+            mime_guess::from_ext(extension)
+                .first_or_octet_stream()
+                .to_string()
+        };
+
+        let write_record_builder = write_record_builder.content_type(content_type);
         write_file_record(ctx, &bucket_name, &entry_name, path, write_record_builder).await?;
     } else {
+        // If no path is provided, use the string payload
+        let content_type = content_type
+            .map(|ct| ct.to_string())
+            .unwrap_or_else(|| "text/plain".to_string());
+
+        let write_record_builder = write_record_builder.content_type(content_type);
+        let timestamp = SystemTime::now();
+
         let data = args
             .get_one::<String>("payload")
             .unwrap()
             .as_bytes()
             .to_vec();
 
-        write_record_builder.data(data).send().await?;
+        write_record_builder
+            .data(data)
+            .timestamp(timestamp)
+            .send()
+            .await?;
     };
 
     output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
@@ -150,10 +178,11 @@ async fn write_file_record(
 
     // Wrap the stream with progress tracking
     let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
-
+    let timestamp = SystemTime::now();
     write_record_builder
         .stream(progress_stream)
         .content_length(content_length)
+        .timestamp(timestamp)
         .send()
         .await?;
 
@@ -207,6 +236,34 @@ mod tests {
                 entry_path
             )]
         );
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_write_file_with_mime_guess(
+        context: CliContext,
+        #[future] bucket: Bucket,
+    ) -> anyhow::Result<()> {
+        let bucket = bucket.await;
+        let temp_dir = tempfile::tempdir()?;
+        let file_path = temp_dir.path().join("test.json");
+        tokio::fs::write(&file_path, b"{\"test\": \"data\"}").await?;
+
+        // Write without explicit content-type, should guess from extension
+        let args = write_record_cmd().get_matches_from(vec![
+            "write",
+            format!("local/{}/test-entry", bucket.name()).as_str(),
+            "--file",
+            file_path.to_str().unwrap(),
+        ]);
+
+        write_handler(&context, &args).await?;
+
+        let record = bucket.read_record("test-entry").send().await?;
+        assert_eq!(record.content_type(), "application/json");
+        assert_eq!(record.bytes().await?.as_ref(), b"{\"test\": \"data\"}");
 
         Ok(())
     }
