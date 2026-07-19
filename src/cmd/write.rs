@@ -3,7 +3,7 @@ use bytesize::ByteSize;
 use clap::{Arg, Command};
 use futures_util::stream::Stream;
 use indicatif::{ProgressBar, ProgressStyle};
-use reduct_rs::Labels;
+use reduct_rs::WriteRecordBuilder;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio_util::io::ReaderStream;
@@ -70,7 +70,7 @@ pub(crate) fn write_record_cmd() -> Command {
                 .long("file")
                 .short('f')
                 .help("payload file path.")
-                .required(false)
+                .required(true)
                 .value_name("PATH")
                 .conflicts_with("payload"),
         )
@@ -84,58 +84,72 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
         .ok_or_else(|| anyhow::anyhow!("ENTRY_PATH must be alias/bucket/path/to/entry"))?;
 
     let client = build_client(ctx, &alias_or_url).await?;
-
     let bucket = client.get_bucket(&bucket_name).await?;
+    let write_record_builder = bucket.write_record(&entry_name);
+    // .labels(labels)
+    // .content_type(content_type)
+    // .timestamp_us(timestamp)
+    // .content_type("application/text")
 
     if let Some(path) = args.get_one::<String>("path") {
-        let reader_stream = ReaderStream::new(tokio::fs::File::open(path).await?);
-        let content_length = tokio::fs::metadata(path).await?.len();
-
-        // Create a progress bar for file upload
-        let progress_bar = ProgressBar::new(content_length);
-        progress_bar.set_style(
-            ProgressStyle::with_template(
-                "[{elapsed_precise}] {bar:40.green/gray} {bytes}/{total_bytes} ({bytes_per_sec}) {msg}",
-            )?
-            .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
-        );
-        progress_bar.set_message(format!("Uploading to {}/{}", bucket_name, entry_name));
-
-        // Wrap the stream with progress tracking
-        let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
-
-        bucket
-            .write_record(&entry_name)
-            // .content_type("application/text")
-            .labels(Labels::from([("name".to_string(), "malhar".to_string())]))
-            .stream(progress_stream)
-            .content_length(content_length)
-            .send()
-            .await?;
-
-        progress_bar.finish_with_message(format!(
-            "Uploaded {} to {}/{}",
-            ByteSize::b(content_length),
-            bucket_name,
-            entry_name
-        ));
+        write_file_record(ctx, &bucket_name, &entry_name, path, write_record_builder).await?;
     } else {
         let data = args
             .get_one::<String>("payload")
             .unwrap()
             .as_bytes()
             .to_vec();
-        // ReaderStream::new(bytes.as_slice())
-        bucket
-            .write_record(&entry_name)
-            .data(data)
-            .content_type("application/text")
-            .labels(Labels::from([("is_file".to_string(), "false".to_string())]))
-            .send()
-            .await?;
+
+        write_record_builder.data(data).send().await?;
     };
 
     output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+
+    Ok(())
+}
+
+async fn write_file_record(
+    _ctx: &CliContext,
+    bucket_name: &str,
+    entry_name: &str,
+    file_path: &str,
+    // args: &clap::ArgMatches,
+    write_record_builder: WriteRecordBuilder,
+) -> anyhow::Result<()> {
+    let file = tokio::fs::File::open(file_path).await?;
+    let content_length = file.metadata().await?.len();
+
+    if content_length == 0 {
+        return Err(anyhow::anyhow!("File is empty"));
+    }
+
+    let reader_stream = ReaderStream::new(file);
+
+    // Create a progress bar for file upload
+    let progress_bar = ProgressBar::new(content_length);
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.green/gray} {bytes}/{total_bytes} ({bytes_per_sec}) {msg}",
+        )?
+        .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
+    );
+    progress_bar.set_message(format!("Uploading to {}/{}", bucket_name, entry_name));
+
+    // Wrap the stream with progress tracking
+    let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
+
+    write_record_builder
+        .stream(progress_stream)
+        .content_length(content_length)
+        .send()
+        .await?;
+
+    progress_bar.finish_with_message(format!(
+        "Uploaded {} to {}/{}",
+        ByteSize::b(content_length),
+        bucket_name,
+        entry_name
+    ));
 
     Ok(())
 }
