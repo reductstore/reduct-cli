@@ -74,6 +74,14 @@ pub(crate) fn write_record_cmd() -> Command {
                 .value_name("PATH")
                 .conflicts_with("payload"),
         )
+        .arg(
+            Arg::new("content-type")
+                .long("content-type")
+                .short('C')
+                .help("record content type.")
+                .required(false)
+                .value_name("MIME"),
+        )
 }
 
 pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -83,13 +91,18 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     let entry_name = entry_name
         .ok_or_else(|| anyhow::anyhow!("ENTRY_PATH must be alias/bucket/path/to/entry"))?;
 
+    let content_type = args.get_one::<String>("content-type");
+
     let client = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
-    let write_record_builder = bucket.write_record(&entry_name);
+    let mut write_record_builder = bucket.write_record(&entry_name);
+
+    if let Some(content_type) = content_type {
+        write_record_builder = write_record_builder.content_type(content_type);
+    }
+
     // .labels(labels)
-    // .content_type(content_type)
     // .timestamp_us(timestamp)
-    // .content_type("application/text")
 
     if let Some(path) = args.get_one::<String>("path") {
         write_file_record(ctx, &bucket_name, &entry_name, path, write_record_builder).await?;
