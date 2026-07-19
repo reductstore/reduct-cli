@@ -1,4 +1,5 @@
 use clap::{Arg, Command};
+use reduct_rs::Labels;
 
 use crate::{
     context::CliContext,
@@ -21,7 +22,17 @@ pub(crate) fn write_record_cmd() -> Command {
                 .short('s')
                 .help("inline payload string.")
                 .required(true)
-                .value_name("PAYLOAD"),
+                .value_name("PAYLOAD")
+                .conflicts_with("path"),
+        )
+        .arg(
+            Arg::new("path")
+                .long("file")
+                .short('f')
+                .help("payload file path.")
+                .required(false)
+                .value_name("PATH")
+                .conflicts_with("payload"),
         )
 }
 
@@ -32,15 +43,25 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     let entry_name = entry_name
         .ok_or_else(|| anyhow::anyhow!("ENTRY_PATH must be alias/bucket/path/to/entry"))?;
 
-    let payload = args.get_one::<String>("payload").unwrap().clone();
+    let mut is_file = false;
+    let data = if let Some(path) = args.get_one::<String>("path") {
+        is_file = true;
+        std::fs::read(path)?
+    } else {
+        args.get_one::<String>("payload")
+            .unwrap()
+            .as_bytes()
+            .to_vec()
+    };
 
     let client = build_client(ctx, &alias_or_url).await?;
 
     let bucket = client.get_bucket(&bucket_name).await?;
     bucket
         .write_record(&entry_name)
-        .data(payload)
+        .data(data)
         .content_type("application/text")
+        .labels(Labels::from([("is_file".to_string(), is_file.to_string())]))
         .send()
         .await?;
 
