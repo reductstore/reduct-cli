@@ -9,6 +9,7 @@ use std::task::{Context, Poll};
 use std::time::SystemTime;
 use tokio_util::io::ReaderStream;
 
+use crate::parse::parse_time;
 use crate::{
     context::CliContext,
     io::{reduct::build_client, std::output},
@@ -83,6 +84,14 @@ pub(crate) fn write_record_cmd() -> Command {
                 .required(false)
                 .value_name("MIME"),
         )
+        .arg(
+            Arg::new("timestamp")
+                .long("timestamp")
+                .short('t')
+                .help("RFC 3339 / ISO timestamp or Unix timestamp in microseconds.")
+                .required(false)
+                .value_name("TIME"),
+        )
 }
 
 pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
@@ -96,10 +105,22 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
 
     let client = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
-    let write_record_builder = bucket.write_record(&entry_name);
+    let mut write_record_builder = bucket.write_record(&entry_name);
 
     // .labels(labels)
-    // .timestamp_us(timestamp)
+
+    // Parse timestamp from argument or use current time
+    let timestamp_us = if let Some(timestamp_str) = args.get_one::<String>("timestamp") {
+        parse_time(Some(timestamp_str))
+            .map_err(|e| anyhow::anyhow!("Invalid timestamp: {}", e))?
+            .ok_or_else(|| anyhow::anyhow!("Timestamp parsing returned None"))?
+    } else {
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)?
+            .as_micros() as u64
+    };
+
+    write_record_builder = write_record_builder.timestamp_us(timestamp_us);
 
     if let Some(path) = args.get_one::<String>("path") {
         // Check file path validity
@@ -129,7 +150,6 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
             .unwrap_or_else(|| "text/plain".to_string());
 
         let write_record_builder = write_record_builder.content_type(content_type);
-        let timestamp = SystemTime::now();
 
         let data = args
             .get_one::<String>("payload")
@@ -137,11 +157,7 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
             .as_bytes()
             .to_vec();
 
-        write_record_builder
-            .data(data)
-            .timestamp(timestamp)
-            .send()
-            .await?;
+        write_record_builder.data(data).send().await?;
     };
 
     output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
@@ -178,11 +194,10 @@ async fn write_file_record(
 
     // Wrap the stream with progress tracking
     let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
-    let timestamp = SystemTime::now();
+
     write_record_builder
         .stream(progress_stream)
         .content_length(content_length)
-        .timestamp(timestamp)
         .send()
         .await?;
 
