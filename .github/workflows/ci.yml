@@ -118,6 +118,9 @@ jobs:
           RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      - name: Show sccache stats
+        run: sccache --show-stats
+
       - name: Upload binary
         uses: actions/upload-artifact@v6
         with:
@@ -153,6 +156,9 @@ jobs:
         run: docker run --network=host -v ${PWD}/misc:/misc --env RS_API_TOKEN=TOKEN -d ${{env.REGISTRY_IMAGE}}:main
       - name: Run Client CLI tests
         run: RS_API_TOKEN=TOKEN cargo test --locked -- --test-threads=1
+
+      - name: Show sccache stats
+        run: sccache --show-stats
 
 
   check_tag:
