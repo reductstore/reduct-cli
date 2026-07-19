@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
 use reduct_rs::Labels;
+use tokio_util::io::ReaderStream;
 
 use crate::{
     context::CliContext,
@@ -43,27 +44,37 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     let entry_name = entry_name
         .ok_or_else(|| anyhow::anyhow!("ENTRY_PATH must be alias/bucket/path/to/entry"))?;
 
-    let mut is_file = false;
-    let data = if let Some(path) = args.get_one::<String>("path") {
-        is_file = true;
-        std::fs::read(path)?
-    } else {
-        args.get_one::<String>("payload")
-            .unwrap()
-            .as_bytes()
-            .to_vec()
-    };
-
     let client = build_client(ctx, &alias_or_url).await?;
 
     let bucket = client.get_bucket(&bucket_name).await?;
-    bucket
-        .write_record(&entry_name)
-        .data(data)
-        .content_type("application/text")
-        .labels(Labels::from([("is_file".to_string(), is_file.to_string())]))
-        .send()
-        .await?;
+
+    if let Some(path) = args.get_one::<String>("path") {
+        let reader_stream = ReaderStream::new(tokio::fs::File::open(path).await?);
+        let content_length = tokio::fs::metadata(path).await?.len();
+        bucket
+            .write_record(&entry_name)
+            // .content_type("application/text")
+            .labels(Labels::from([("name".to_string(), "malhar".to_string())]))
+            .stream(reader_stream)
+            .content_length(content_length)
+            .send()
+            .await?;
+    } else {
+        println!("found payload");
+        let data = args
+            .get_one::<String>("payload")
+            .unwrap()
+            .as_bytes()
+            .to_vec();
+        // ReaderStream::new(bytes.as_slice())
+        bucket
+            .write_record(&entry_name)
+            .data(data)
+            .content_type("application/text")
+            .labels(Labels::from([("is_file".to_string(), "false".to_string())]))
+            .send()
+            .await?;
+    };
 
     output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
 
