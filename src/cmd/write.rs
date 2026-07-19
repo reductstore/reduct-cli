@@ -1,5 +1,11 @@
+use bytes::Bytes;
+use bytesize::ByteSize;
 use clap::{Arg, Command};
+use futures_util::stream::Stream;
+use indicatif::{ProgressBar, ProgressStyle};
 use reduct_rs::Labels;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use tokio_util::io::ReaderStream;
 
 use crate::{
@@ -7,6 +13,39 @@ use crate::{
     io::{reduct::build_client, std::output},
     parse::{Resource, ResourcePathParser},
 };
+
+/// A wrapper stream that tracks upload progress
+struct ProgressStream<S> {
+    inner: S,
+    progress_bar: ProgressBar,
+}
+
+impl<S> ProgressStream<S> {
+    fn new(inner: S, progress_bar: ProgressBar) -> Self {
+        Self {
+            inner,
+            progress_bar,
+        }
+    }
+}
+
+impl<S, E> Stream for ProgressStream<S>
+where
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+{
+    type Item = Result<Bytes, E>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let this = &mut *self;
+        match Pin::new(&mut this.inner).poll_next(cx) {
+            Poll::Ready(Some(Ok(chunk))) => {
+                this.progress_bar.inc(chunk.len() as u64);
+                Poll::Ready(Some(Ok(chunk)))
+            }
+            other => other,
+        }
+    }
+}
 
 pub(crate) fn write_record_cmd() -> Command {
     Command::new("write")
@@ -51,16 +90,36 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     if let Some(path) = args.get_one::<String>("path") {
         let reader_stream = ReaderStream::new(tokio::fs::File::open(path).await?);
         let content_length = tokio::fs::metadata(path).await?.len();
+
+        // Create a progress bar for file upload
+        let progress_bar = ProgressBar::new(content_length);
+        progress_bar.set_style(
+            ProgressStyle::with_template(
+                "[{elapsed_precise}] {bar:40.green/gray} {bytes}/{total_bytes} ({bytes_per_sec}) {msg}",
+            )?
+            .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
+        );
+        progress_bar.set_message(format!("Uploading to {}/{}", bucket_name, entry_name));
+
+        // Wrap the stream with progress tracking
+        let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
+
         bucket
             .write_record(&entry_name)
             // .content_type("application/text")
             .labels(Labels::from([("name".to_string(), "malhar".to_string())]))
-            .stream(reader_stream)
+            .stream(progress_stream)
             .content_length(content_length)
             .send()
             .await?;
+
+        progress_bar.finish_with_message(format!(
+            "Uploaded {} to {}/{}",
+            ByteSize::b(content_length),
+            bucket_name,
+            entry_name
+        ));
     } else {
-        println!("found payload");
         let data = args
             .get_one::<String>("payload")
             .unwrap()
