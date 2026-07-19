@@ -91,6 +91,13 @@ pub(crate) fn write_record_cmd() -> Command {
                 .help("RFC 3339 / ISO timestamp or Unix timestamp in microseconds.")
                 .required(false)
                 .value_name("TIME"),
+        ).arg(
+            Arg::new("quiet")
+                .long("quiet")
+                .short('q')
+                .help("suppress successful output.")
+                .required(false)
+                .action(clap::ArgAction::SetTrue),
         )
 }
 
@@ -160,7 +167,9 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
         write_record_builder.data(data).send().await?;
     };
 
-    output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+    if !args.get_flag("quiet") {
+        output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+    }
 
     Ok(())
 }
