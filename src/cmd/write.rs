@@ -312,6 +312,45 @@ mod tests {
 
             Ok(())
         }
+
+        /*
+            Test that --quiet flag suppresses output.
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_string_record_quiet(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            entry_path: String,
+            payload: String,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/{}", bucket.name(), entry_path).as_str(),
+                "--string",
+                payload.as_str(),
+                "--quiet",
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record(&entry_path).send().await?;
+
+            // Verify record was written correctly
+            assert_eq!(record.bytes().await?, payload.as_bytes());
+
+            // Verify no output was produced
+            assert_eq!(
+                context.stdout().history(),
+                Vec::<String>::new(),
+                "Expected no output with --quiet flag, but got: {:?}",
+                context.stdout().history()
+            );
+
+            Ok(())
+        }
     }
 
     mod file_record_tests {
