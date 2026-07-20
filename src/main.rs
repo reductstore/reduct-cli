@@ -18,6 +18,7 @@ use std::time::Duration;
 use crate::cmd::bucket::{bucket_cmd, bucket_handler};
 use crate::cmd::cp::{cp_cmd, cp_handler};
 use crate::cmd::lifecycle::{lifecycle_cmd, lifecycle_handler};
+use crate::cmd::login::{login_cmd, login_handler};
 use crate::cmd::replica::{replication_cmd, replication_handler};
 use crate::cmd::rm::{rm_cmd, rm_handler};
 use crate::cmd::server::{server_cmd, server_handler};
@@ -75,6 +76,7 @@ fn cli() -> Command {
         .subcommand(token_cmd())
         .subcommand(replication_cmd())
         .subcommand(lifecycle_cmd())
+        .subcommand(login_cmd())
         .subcommand(cp_cmd())
         .subcommand(rm_cmd())
 }
@@ -102,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
         Some(("token", args)) => token_handler(&ctx, args.subcommand()).await,
         Some(("replica", args)) => replication_handler(&ctx, args.subcommand()).await,
         Some(("lifecycle", args)) => lifecycle_handler(&ctx, args.subcommand()).await,
+        Some(("login", args)) => login_handler(&ctx, args).await,
 
         Some(("cp", args)) => cp_handler(&ctx, args).await,
         Some(("rm", args)) => rm_handler(&ctx, args).await,
