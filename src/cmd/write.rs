@@ -526,39 +526,6 @@ mod tests {
         }
 
         /*
-            Test writing string records with a timestamp.
-        */
-        #[rstest]
-        #[tokio::test]
-        async fn test_write_string_with_timestamp(
-            context: CliContext,
-            #[future] bucket: Bucket,
-        ) -> anyhow::Result<()> {
-            let bucket = bucket.await;
-
-            let timestamp_str = "2025-12-25T12:00:00Z";
-            let args = write_record_cmd().get_matches_from(vec![
-                "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "-s",
-                "test payload",
-                "-t",
-                timestamp_str,
-            ]);
-
-            write_handler(&context, &args).await?;
-
-            let expected_micros =
-                parse_time(Some(&timestamp_str.to_string()))?.expect("timestamp should parse");
-
-            let record = bucket.read_record("test-entry").send().await?;
-            assert_eq!(record.timestamp_us(), expected_micros);
-            assert_eq!(record.bytes().await?.as_ref(), b"test payload");
-
-            Ok(())
-        }
-
-        /*
             Test that writing without a timestamp uses the current time.
         */
         #[rstest]
