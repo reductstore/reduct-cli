@@ -247,51 +247,67 @@ mod tests {
         use super::*;
 
         /*
-            Verifies that content-type is set to application/octet-stream
-            when no extension is provided.
+            Test content-type handling for file uploads.
+            Tests: no extension (octet-stream), MIME guessing, and explicit content-type.
         */
         #[rstest]
+        #[case("testfile", b"Hello World", None, "application/octet-stream")]
+        #[case("test.json", b"{\"test\": \"data\"}", None, "application/json")]
+        #[case(
+            "test.txt",
+            b"hello world",
+            Some("application/json"),
+            "application/json"
+        )]
         #[tokio::test]
-        async fn test_write_file_with_no_extension(
+        async fn test_write_file_content_type(
             context: CliContext,
             #[future] bucket: Bucket,
+            #[case] filename: &str,
+            #[case] content: &[u8],
+            #[case] explicit_content_type: Option<&str>,
+            #[case] expected_content_type: &str,
         ) -> anyhow::Result<()> {
             let bucket = bucket.await;
-
-            // Create an empty file
             let temp_dir = tempfile::tempdir()?;
-            let file_path = temp_dir.path().join("testfile");
-            tokio::fs::write(&file_path, b"Hello World").await?;
+            let file_path = temp_dir.path().join(filename);
+            tokio::fs::write(&file_path, content).await?;
 
-            let args = write_record_cmd().get_matches_from(vec![
+            let entry_path = format!("local/{}/test-entry", bucket.name());
+            let mut args_vec = vec![
                 "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "-f",
+                entry_path.as_str(),
+                "--file",
                 file_path.to_str().unwrap(),
-            ]);
+            ];
 
+            // Add content-type if explicitly provided
+            if let Some(ct) = explicit_content_type {
+                args_vec.push("--content-type");
+                args_vec.push(ct);
+            }
+
+            let args = write_record_cmd().get_matches_from(args_vec);
             write_handler(&context, &args).await?;
 
             let record = bucket.read_record("test-entry").send().await?;
-            assert_eq!(record.content_type(), "application/octet-stream");
+            assert_eq!(record.content_type(), expected_content_type);
 
             Ok(())
         }
 
         /*
-            Verifies that an error is returned when writing an empty file.
+            Test that writing an empty file returns an error.
         */
         #[rstest]
         #[tokio::test]
-        async fn test_write_file_with_empty_file(
+        async fn test_write_empty_file(
             context: CliContext,
             #[future] bucket: Bucket,
         ) -> anyhow::Result<()> {
             let bucket = bucket.await;
-
-            // Create an empty file
             let temp_dir = tempfile::tempdir()?;
-            let file_path = temp_dir.path().join("test.txt");
+            let file_path = temp_dir.path().join("empty.txt");
             tokio::fs::write(&file_path, b"").await?;
 
             let args = write_record_cmd().get_matches_from(vec![
@@ -304,7 +320,6 @@ mod tests {
             let result = write_handler(&context, &args).await;
 
             assert!(result.is_err());
-
             let error_msg = result.unwrap_err().to_string();
             assert!(
                 error_msg.contains("File is empty"),
@@ -316,131 +331,37 @@ mod tests {
         }
 
         /*
-            Verifies that the content-type is guessed from the file extension
-            when --content-type is not supplied.
+            Test error conditions for invalid file paths.
+            Tests: file not found, directory instead of file.
         */
         #[rstest]
+        #[case("not_exist.json", "No such file or directory")]
+        #[case("/tmp/somedir", "No such file or directory")]
         #[tokio::test]
-        async fn test_write_file_with_mime_guess(
+        async fn test_write_file_path_errors(
             context: CliContext,
             #[future] bucket: Bucket,
+            #[case] file_path: &str,
+            #[case] expected_error: &str,
         ) -> anyhow::Result<()> {
             let bucket = bucket.await;
-            let temp_dir = tempfile::tempdir()?;
-            let file_path = temp_dir.path().join("test.json");
-            tokio::fs::write(&file_path, b"{\"test\": \"data\"}").await?;
 
-            // Write without explicit content-type, should guess from extension
+            let entry_path = format!("local/{}/test-entry", bucket.name());
             let args = write_record_cmd().get_matches_from(vec![
                 "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "--file",
-                file_path.to_str().unwrap(),
-            ]);
-
-            write_handler(&context, &args).await?;
-
-            let record = bucket.read_record("test-entry").send().await?;
-            assert_eq!(record.content_type(), "application/json");
-            assert_eq!(record.bytes().await?.as_ref(), b"{\"test\": \"data\"}");
-
-            Ok(())
-        }
-
-        /*
-            Verifies that the content-type is set to the value supplied
-            when --content-type is used.
-        */
-        #[rstest]
-        #[tokio::test]
-        async fn test_write_file_with_content_type(
-            context: CliContext,
-            #[future] bucket: Bucket,
-        ) -> anyhow::Result<()> {
-            let bucket = bucket.await;
-            let temp_dir = tempfile::tempdir()?;
-            let file_path = temp_dir.path().join("test.txt");
-            tokio::fs::write(&file_path, b"hello world").await?;
-
-            // Write without explicit content-type, should guess from extension
-            let args = write_record_cmd().get_matches_from(vec![
-                "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "--file",
-                file_path.to_str().unwrap(),
-                "--content-type",
-                "application/json",
-            ]);
-
-            write_handler(&context, &args).await?;
-
-            let record = bucket.read_record("test-entry").send().await?;
-            assert_eq!(record.content_type(), "application/json");
-
-            Ok(())
-        }
-
-        /*
-            Verifies that an error is returned when the file is not found.
-        */
-        #[rstest]
-        #[tokio::test]
-        async fn test_file_not_found(
-            context: CliContext,
-            #[future] bucket: Bucket,
-        ) -> anyhow::Result<()> {
-            let file_path = "not_exist.json";
-            let bucket = bucket.await;
-
-            let args = write_record_cmd().get_matches_from(vec![
-                "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
+                entry_path.as_str(),
                 "-f",
                 file_path,
             ]);
 
             let result = write_handler(&context, &args).await;
 
-            // Should return an error for non-existent file
             assert!(result.is_err());
             let error_msg = result.unwrap_err().to_string();
             assert!(
-                error_msg.contains("No such file or directory"),
-                "Expected error about missing file, got: {}",
-                error_msg
-            );
-
-            Ok(())
-        }
-
-        /*
-            Verifies that an error is returned when a directory is passed
-            instead of a file.
-        */
-        #[rstest]
-        #[tokio::test]
-        async fn test_dir_path_for_file(
-            context: CliContext,
-            #[future] bucket: Bucket,
-        ) -> anyhow::Result<()> {
-            let file_path = "/tmp/somedir";
-            let bucket = bucket.await;
-
-            let args = write_record_cmd().get_matches_from(vec![
-                "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "-f",
-                file_path,
-            ]);
-
-            let result = write_handler(&context, &args).await;
-
-            // Should return an error for non-existent file
-            assert!(result.is_err());
-            let error_msg = result.unwrap_err().to_string();
-            assert!(
-                error_msg.contains("No such file or directory"),
-                "Expected error about missing file, got: {}",
+                error_msg.contains(expected_error),
+                "Expected error containing '{}', got: {}",
+                expected_error,
                 error_msg
             );
 
