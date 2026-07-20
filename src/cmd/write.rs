@@ -242,6 +242,78 @@ mod tests {
     use reduct_rs::Bucket;
     use rstest::*;
 
+    mod string_record_tests {
+
+        use super::*;
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_string_record(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            entry_path: String,
+            payload: String,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            // Prepare args
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/{}", bucket.name(), entry_path).as_str(),
+                "--string",
+                payload.as_str(),
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record(&entry_path).send().await?;
+
+            assert_eq!(record.bytes().await?, payload.as_bytes());
+
+            assert_eq!(
+                context.stdout().history(),
+                vec![format!(
+                    "Record written to '{}/{}'",
+                    bucket.name(),
+                    entry_path
+                )]
+            );
+
+            Ok(())
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_string_record_with_content_type(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            entry_path: String,
+            payload: String,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let content_type = "text/html";
+
+            // Prepare args
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/{}", bucket.name(), entry_path).as_str(),
+                "--string",
+                payload.as_str(),
+                "--content-type",
+                content_type,
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record(&entry_path).send().await?;
+
+            assert_eq!(record.content_type(), content_type);
+
+            Ok(())
+        }
+    }
+
     mod file_record_tests {
 
         use super::*;
@@ -522,6 +594,196 @@ mod tests {
                 expected_errors,
                 error_msg
             );
+
+            Ok(())
+        }
+    }
+
+    mod label_tests {
+        use super::*;
+
+        /*
+            Test writing records with valid label formats.
+            Tests: key=value format, multiple labels, and JSON format.
+        */
+        #[rstest]
+        #[case("env=prod", &[("env", "prod")])]
+        #[case("env=prod,version=1.0", &[("env", "prod"), ("version", "1.0")])]
+        #[case("key1=value1,key2=value2,key3=value3", &[("key1", "value1"), ("key2", "value2"), ("key3", "value3")])]
+        #[case(r#"{"env":"prod"}"#, &[("env", "prod")])]
+        #[case(r#"{"env":"prod","version":"1.0"}"#, &[("env", "prod"), ("version", "1.0")])]
+        #[tokio::test]
+        async fn test_write_string_with_valid_labels(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            #[case] labels_str: &str,
+            #[case] expected_labels: &[(&str, &str)],
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "--labels",
+                labels_str,
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record("test-entry").send().await?;
+            let labels = record.labels();
+
+            // Check all expected labels are present
+            for (key, value) in expected_labels {
+                assert_eq!(
+                    labels.get(*key),
+                    Some(&value.to_string()),
+                    "Expected label {}={}, but got {:?}",
+                    key,
+                    value,
+                    labels.get(*key)
+                );
+            }
+
+            // Check count matches
+            assert_eq!(
+                labels.len(),
+                expected_labels.len(),
+                "Expected {} labels, got {}",
+                expected_labels.len(),
+                labels.len()
+            );
+
+            Ok(())
+        }
+
+        /*
+            Test that invalid label formats are rejected.
+        */
+        #[rstest]
+        #[case("invalid", "Invalid label format")]
+        #[case("=value", "Label key cannot be empty")]
+        #[case("key1=value1,invalid", "Invalid label format")]
+        #[case(r#"{"invalid json"#, "Failed to parse labels as JSON")]
+        #[tokio::test]
+        async fn test_write_with_invalid_labels(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            #[case] labels_str: &str,
+            #[case] expected_error: &str,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "--labels",
+                labels_str,
+            ]);
+
+            let result = write_handler(&context, &args).await;
+
+            assert!(result.is_err());
+            let error_msg = result.unwrap_err().to_string();
+            assert!(
+                error_msg.contains(expected_error),
+                "Expected error containing '{}', got: {}",
+                expected_error,
+                error_msg
+            );
+
+            Ok(())
+        }
+
+        /*
+            Test that empty label values are allowed.
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_with_empty_label_value(
+            context: CliContext,
+            #[future] bucket: Bucket,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "--labels",
+                "key=",
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record("test-entry").send().await?;
+            let labels = record.labels();
+
+            assert_eq!(labels.get("key"), Some(&"".to_string()));
+
+            Ok(())
+        }
+
+        /*
+            Test that labels with special characters work correctly.
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_with_special_char_labels(
+            context: CliContext,
+            #[future] bucket: Bucket,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "--labels",
+                "key-1=value_1,key.2=value-2",
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record("test-entry").send().await?;
+            let labels = record.labels();
+
+            assert_eq!(labels.get("key-1"), Some(&"value_1".to_string()));
+            assert_eq!(labels.get("key.2"), Some(&"value-2".to_string()));
+
+            Ok(())
+        }
+
+        /*
+            Test writing without labels (labels should be empty).
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_without_labels(
+            context: CliContext,
+            #[future] bucket: Bucket,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let record = bucket.read_record("test-entry").send().await?;
+            let labels = record.labels();
+
+            assert!(labels.is_empty(), "Expected no labels, got: {:?}", labels);
 
             Ok(())
         }
