@@ -111,25 +111,57 @@ pub(crate) fn write_record_cmd() -> Command {
 }
 
 pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
+    // Extract and validate entry path
     let entry_path = args.get_one::<Resource>("ENTRY_PATH").unwrap().clone();
     let (alias_or_url, bucket_name, entry_name) = entry_path.triple()?;
-
     let entry_name = entry_name
         .ok_or_else(|| anyhow::anyhow!("ENTRY_PATH must be alias/bucket/path/to/entry"))?;
 
-    let content_type = args.get_one::<String>("content-type");
-
+    // Build client and get bucket
     let client = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
-    let mut write_record_builder = bucket.write_record(&entry_name);
 
-    // Parse labels if provided
-    if let Some(labels_str) = args.get_one::<String>("labels") {
-        let labels = parse_labels(labels_str)?;
-        write_record_builder = write_record_builder.labels(labels);
+    // Build record with common metadata (labels, timestamp)
+    let mut builder = bucket.write_record(&entry_name);
+    builder = apply_labels(builder, args)?;
+    builder = apply_timestamp(builder, args)?;
+
+    // Handle file or string payload
+    let file_path = args.get_one::<String>("path");
+    let content_type = args.get_one::<String>("content-type");
+
+    if let Some(path) = file_path {
+        write_file(builder, content_type, path, &bucket_name, &entry_name).await?;
+    } else {
+        write_string(builder, content_type, args).await?;
     }
 
-    // Parse timestamp from argument or use current time
+    // Output success message unless quiet
+    if !args.get_flag("quiet") {
+        output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+    }
+
+    Ok(())
+}
+
+/// Apply labels to the write record builder if provided
+fn apply_labels(
+    builder: WriteRecordBuilder,
+    args: &clap::ArgMatches,
+) -> anyhow::Result<WriteRecordBuilder> {
+    if let Some(labels_str) = args.get_one::<String>("labels") {
+        let labels = parse_labels(labels_str)?;
+        Ok(builder.labels(labels))
+    } else {
+        Ok(builder)
+    }
+}
+
+/// Apply timestamp to the write record builder (from args or current time)
+fn apply_timestamp(
+    builder: WriteRecordBuilder,
+    args: &clap::ArgMatches,
+) -> anyhow::Result<WriteRecordBuilder> {
     let timestamp_us = if let Some(timestamp_str) = args.get_one::<String>("timestamp") {
         parse_time(Some(timestamp_str))
             .map_err(|e| anyhow::anyhow!("Invalid timestamp: {}", e))?
@@ -139,85 +171,60 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_micros() as u64
     };
-
-    write_record_builder = write_record_builder.timestamp_us(timestamp_us);
-
-    if let Some(path) = args.get_one::<String>("path") {
-        // Check file path validity
-        if !tokio::fs::metadata(path).await?.is_file() {
-            return Err(anyhow::anyhow!("Path '{}' is invalid or not a file", path));
-        }
-
-        // Guess content type from file extension if not provided
-        let content_type = if let Some(ct) = content_type {
-            ct.to_string()
-        } else {
-            let extension = std::path::Path::new(path)
-                .extension()
-                .and_then(|ext| ext.to_str())
-                .unwrap_or("");
-            mime_guess::from_ext(extension)
-                .first_or_octet_stream()
-                .to_string()
-        };
-
-        let write_record_builder = write_record_builder.content_type(content_type);
-        write_file_record(ctx, &bucket_name, &entry_name, path, write_record_builder).await?;
-    } else {
-        // If no path is provided, use the string payload
-        let content_type = content_type
-            .map(|ct| ct.to_string())
-            .unwrap_or_else(|| "text/plain".to_string());
-
-        let write_record_builder = write_record_builder.content_type(content_type);
-
-        let data = args
-            .get_one::<String>("payload")
-            .unwrap()
-            .as_bytes()
-            .to_vec();
-
-        write_record_builder.data(data).send().await?;
-    };
-
-    if !args.get_flag("quiet") {
-        output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
-    }
-
-    Ok(())
+    Ok(builder.timestamp_us(timestamp_us))
 }
 
-async fn write_file_record(
-    _ctx: &CliContext,
+/// Determine content type from explicit arg or file extension
+fn get_content_type(explicit: Option<&String>, file_path: &str) -> String {
+    if let Some(ct) = explicit {
+        return ct.to_string();
+    }
+
+    std::path::Path::new(file_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            mime_guess::from_ext(ext)
+                .first_or_octet_stream()
+                .to_string()
+        })
+        .unwrap_or_else(|| "application/octet-stream".to_string())
+}
+
+/// Write a file record with progress tracking
+async fn write_file(
+    builder: WriteRecordBuilder,
+    content_type: Option<&String>,
+    file_path: &str,
     bucket_name: &str,
     entry_name: &str,
-    file_path: &str,
-    // args: &clap::ArgMatches,
-    write_record_builder: WriteRecordBuilder,
 ) -> anyhow::Result<()> {
     let file = tokio::fs::File::open(file_path).await?;
-    let content_length = file.metadata().await?.len();
+    let metadata = file.metadata().await?;
 
+    // Validate file
+    if !metadata.is_file() {
+        return Err(anyhow::anyhow!(
+            "Path '{}' is invalid or not a file",
+            file_path
+        ));
+    }
+    let content_length = metadata.len();
     if content_length == 0 {
         return Err(anyhow::anyhow!("File is empty"));
     }
 
+    // Determine content type and create stream
+    let content_type = get_content_type(content_type, file_path);
     let reader_stream = ReaderStream::new(file);
 
-    // Create a progress bar for file upload
-    let progress_bar = ProgressBar::new(content_length);
-    progress_bar.set_style(
-        ProgressStyle::with_template(
-            "[{elapsed_precise}] {bar:40.green/gray} {bytes}/{total_bytes} ({bytes_per_sec}) {msg}",
-        )?
-        .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
-    );
-    progress_bar.set_message(format!("Uploading to {}/{}", bucket_name, entry_name));
-
-    // Wrap the stream with progress tracking
+    // Setup progress bar
+    let progress_bar = create_progress_bar(content_length, bucket_name, entry_name);
     let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
 
-    write_record_builder
+    // Upload with progress tracking
+    builder
+        .content_type(content_type)
         .stream(progress_stream)
         .content_length(content_length)
         .send()
@@ -231,6 +238,39 @@ async fn write_file_record(
     ));
 
     Ok(())
+}
+
+/// Write a string record
+async fn write_string(
+    builder: WriteRecordBuilder,
+    content_type: Option<&String>,
+    args: &clap::ArgMatches,
+) -> anyhow::Result<()> {
+    let content_type = content_type.map(|s| s.as_str()).unwrap_or("text/plain");
+
+    let data = args
+        .get_one::<String>("payload")
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+
+    builder.content_type(content_type).data(data).send().await?;
+
+    Ok(())
+}
+
+/// Create a progress bar for file upload
+fn create_progress_bar(content_length: u64, bucket_name: &str, entry_name: &str) -> ProgressBar {
+    let progress_bar = ProgressBar::new(content_length);
+    progress_bar.set_style(
+        ProgressStyle::with_template(
+            "[{elapsed_precise}] {bar:40.green/gray} {bytes}/{total_bytes} ({bytes_per_sec}) {msg}",
+        )
+        .expect("Invalid progress bar template")
+        .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
+    );
+    progress_bar.set_message(format!("Uploading to {}/{}", bucket_name, entry_name));
+    progress_bar
 }
 
 #[cfg(test)]
