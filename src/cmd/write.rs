@@ -246,44 +246,6 @@ mod tests {
 
         use super::*;
 
-        #[rstest]
-        #[tokio::test]
-        async fn test_write_file_with_timestamp(
-            context: CliContext,
-            #[future] bucket: Bucket,
-        ) -> anyhow::Result<()> {
-            let bucket = bucket.await;
-
-            // Create a test file
-            let temp_dir = tempfile::tempdir()?;
-            let file_path = temp_dir.path().join("testfile");
-            tokio::fs::write(&file_path, b"Hello World").await?;
-
-            let timestamp_str = "2026-01-01T01:00:00Z";
-            let args = write_record_cmd().get_matches_from(vec![
-                "write",
-                format!("local/{}/test-entry", bucket.name()).as_str(),
-                "-f",
-                file_path.to_str().unwrap(),
-                "-t",
-                timestamp_str,
-            ]);
-
-            write_handler(&context, &args).await?;
-
-            // Parse the expected timestamp using the same function the handler uses
-            use crate::parse::parse_time;
-            let expected_micros =
-                parse_time(Some(&timestamp_str.to_string()))?.expect("timestamp should parse");
-
-            let record = bucket.read_record("test-entry").send().await?;
-            assert_eq!(record.content_type(), "application/octet-stream");
-            assert_eq!(record.timestamp_us(), expected_micros);
-            assert_eq!(record.bytes().await?.as_ref(), b"Hello World");
-
-            Ok(())
-        }
-
         /*
             Verifies that content-type is set to application/octet-stream
             when no extension is provided.
@@ -479,6 +441,164 @@ mod tests {
             assert!(
                 error_msg.contains("No such file or directory"),
                 "Expected error about missing file, got: {}",
+                error_msg
+            );
+
+            Ok(())
+        }
+    }
+
+    mod timestamp_tests {
+        use super::*;
+        use crate::parse::parse_time;
+
+        /*
+            Test writing records with valid timestamp formats.
+            Tests RFC 3339 UTC, RFC 3339 with offset, and Unix microseconds.
+        */
+        #[rstest]
+        #[case("2026-01-01T01:00:00Z", "RFC 3339 UTC")]
+        #[case("2025-06-15T14:30:00+05:30", "RFC 3339 with offset")]
+        #[case("1672531200000000", "Unix microseconds")]
+        #[tokio::test]
+        async fn test_write_file_with_valid_timestamps(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            #[case] timestamp_str: &str,
+            #[case] _description: &str,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let temp_dir = tempfile::tempdir()?;
+            let file_path = temp_dir.path().join("testfile");
+            tokio::fs::write(&file_path, b"test data").await?;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-f",
+                file_path.to_str().unwrap(),
+                "-t",
+                timestamp_str,
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let expected_micros =
+                parse_time(Some(&timestamp_str.to_string()))?.expect("timestamp should parse");
+
+            let record = bucket.read_record("test-entry").send().await?;
+            assert_eq!(record.timestamp_us(), expected_micros);
+
+            Ok(())
+        }
+
+        /*
+            Test writing string records with a timestamp.
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_string_with_timestamp(
+            context: CliContext,
+            #[future] bucket: Bucket,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let timestamp_str = "2025-12-25T12:00:00Z";
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "-t",
+                timestamp_str,
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let expected_micros =
+                parse_time(Some(&timestamp_str.to_string()))?.expect("timestamp should parse");
+
+            let record = bucket.read_record("test-entry").send().await?;
+            assert_eq!(record.timestamp_us(), expected_micros);
+            assert_eq!(record.bytes().await?.as_ref(), b"test payload");
+
+            Ok(())
+        }
+
+        /*
+            Test that writing without a timestamp uses the current time.
+        */
+        #[rstest]
+        #[tokio::test]
+        async fn test_write_without_timestamp_uses_current_time(
+            context: CliContext,
+            #[future] bucket: Bucket,
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let before_us = SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros() as u64;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+            ]);
+
+            write_handler(&context, &args).await?;
+
+            let after_us = SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros() as u64;
+
+            let record = bucket.read_record("test-entry").send().await?;
+            let timestamp = record.timestamp_us();
+
+            // Timestamp should be between before and after
+            assert!(
+                timestamp >= before_us && timestamp <= after_us,
+                "Timestamp {} should be between {} and {}",
+                timestamp,
+                before_us,
+                after_us
+            );
+
+            Ok(())
+        }
+
+        /*
+            Test that invalid timestamp formats are rejected.
+            Tests: invalid format, empty string, and pre-epoch timestamps.
+        */
+        #[rstest]
+        #[case("invalid-timestamp", &["Invalid timestamp", "Failed to parse"])]
+        #[case("   ", &["Invalid timestamp", "empty"])]
+        #[case("1969-12-31T23:59:59Z", &["Invalid timestamp", "Unix epoch"])]
+        #[tokio::test]
+        async fn test_write_with_invalid_timestamps(
+            context: CliContext,
+            #[future] bucket: Bucket,
+            #[case] timestamp_str: &str,
+            #[case] expected_errors: &[&str],
+        ) -> anyhow::Result<()> {
+            let bucket = bucket.await;
+
+            let args = write_record_cmd().get_matches_from(vec![
+                "write",
+                format!("local/{}/test-entry", bucket.name()).as_str(),
+                "-s",
+                "test payload",
+                "-t",
+                timestamp_str,
+            ]);
+
+            let result = write_handler(&context, &args).await;
+
+            assert!(result.is_err());
+            let error_msg = result.unwrap_err().to_string();
+            assert!(
+                expected_errors.iter().any(|e| error_msg.contains(e)),
+                "Expected one of {:?} in error, got: {}",
+                expected_errors,
                 error_msg
             );
 
