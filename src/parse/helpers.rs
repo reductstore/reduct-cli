@@ -701,6 +701,7 @@ mod test {
     }
 
     mod parse_labels {
+        use crate::parse::parse_labels;
 
         #[test]
         fn test_parse_labels_key_value_format() {
