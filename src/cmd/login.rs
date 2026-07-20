@@ -3,13 +3,22 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, bail, Context};
 use clap::{Arg, ArgMatches, Command};
+use http_body_util::Full;
+use hyper::{
+    body::{Bytes, Incoming},
+    header::{CONNECTION, CONTENT_TYPE},
+    server::conn::http1,
+    service::service_fn,
+    Method, Request, Response, StatusCode,
+};
+use hyper_util::rt::TokioIo;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
+    net::TcpListener,
+    sync::{oneshot, Mutex},
     time::timeout,
 };
 use url::Url;
@@ -118,47 +127,60 @@ fn login_url(gateway_url: &Url, callback_addr: SocketAddr) -> anyhow::Result<Url
 }
 
 async fn receive_callback(listener: &TcpListener) -> anyhow::Result<Callback> {
-    let (mut stream, _) = listener.accept().await?;
-    let request_target = read_request_target(&mut stream).await?;
-    let callback = parse_callback(&request_target);
-    let response = if callback.is_ok() {
-        "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body>Authentication successful. You can close this tab.</body></html>"
-    } else {
-        "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-    };
-    stream.write_all(response.as_bytes()).await?;
-    callback
+    let (stream, _) = listener.accept().await?;
+    let (sender, receiver) = oneshot::channel();
+    let sender = Arc::new(Mutex::new(Some(sender)));
+
+    http1::Builder::new()
+        .serve_connection(
+            TokioIo::new(stream),
+            service_fn(move |request| handle_callback(request, Arc::clone(&sender))),
+        )
+        .await
+        .context("Failed to receive OAuth2 callback")?;
+
+    receiver
+        .await
+        .context("OAuth2 callback closed without a response")?
 }
 
-async fn read_request_target(stream: &mut TcpStream) -> anyhow::Result<String> {
-    let mut request = Vec::with_capacity(1024);
-    loop {
-        if request.len() >= 16 * 1024 {
-            bail!("OAuth2 callback request is too large");
-        }
-        let mut buffer = [0_u8; 1024];
-        let read = stream.read(&mut buffer).await?;
-        if read == 0 {
-            bail!("OAuth2 callback request is incomplete");
-        }
-        request.extend_from_slice(&buffer[..read]);
-        if request.windows(4).any(|window| window == b"\r\n\r\n") {
-            break;
-        }
+async fn handle_callback(
+    request: Request<Incoming>,
+    sender: Arc<Mutex<Option<oneshot::Sender<anyhow::Result<Callback>>>>>,
+) -> Result<Response<Full<Bytes>>, hyper::Error> {
+    let callback = if request.method() == Method::GET {
+        let request_target = request
+            .uri()
+            .path_and_query()
+            .map_or("/", |path_and_query| path_and_query.as_str());
+        parse_callback(request_target)
+    } else {
+        Err(anyhow!("OAuth2 callback must use GET"))
+    };
+    let response = callback_response(&callback);
+
+    if let Some(sender) = sender.lock().await.take() {
+        let _ = sender.send(callback);
     }
-    let request = std::str::from_utf8(&request).context("OAuth2 callback is not valid HTTP")?;
-    let request_line = request
-        .lines()
-        .next()
-        .context("OAuth2 callback is missing request line")?;
-    let mut parts = request_line.split_whitespace();
-    if parts.next() != Some("GET") {
-        bail!("OAuth2 callback must use GET");
+
+    Ok(response)
+}
+
+fn callback_response(callback: &anyhow::Result<Callback>) -> Response<Full<Bytes>> {
+    let mut response = Response::builder().header(CONNECTION, "close");
+    if callback.is_ok() {
+        response = response
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, "text/html; charset=utf-8");
+        response.body(Full::new(Bytes::from_static(
+            b"<html><body>Authentication successful. You can close this tab.</body></html>",
+        )))
+    } else {
+        response
+            .status(StatusCode::BAD_REQUEST)
+            .body(Full::new(Bytes::new()))
     }
-    parts
-        .next()
-        .map(str::to_owned)
-        .context("OAuth2 callback is missing request target")
+    .expect("valid OAuth2 callback response")
 }
 
 fn parse_callback(request_target: &str) -> anyhow::Result<Callback> {
@@ -201,6 +223,10 @@ mod tests {
     use super::*;
     use crate::{config::ConfigFile, context::tests::context};
     use rstest::rstest;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpStream,
+    };
 
     #[test]
     fn parses_callback_token_and_expiration() {
@@ -261,7 +287,6 @@ mod tests {
             )
             .await
             .unwrap();
-        stream.shutdown().await.unwrap();
         let mut response = Vec::new();
         stream.read_to_end(&mut response).await.unwrap();
 
