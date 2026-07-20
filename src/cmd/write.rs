@@ -101,6 +101,14 @@ pub(crate) fn write_record_cmd() -> Command {
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
+            Arg::new("json")
+                .long("json")
+                .short('j')
+                .help("output result in JSON format with timing information.")
+                .required(false)
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
             Arg::new("labels")
                 .long("labels")
                 .short('l')
@@ -111,6 +119,10 @@ pub(crate) fn write_record_cmd() -> Command {
 }
 
 pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> anyhow::Result<()> {
+    use std::time::Instant;
+
+    let start = Instant::now();
+
     // Extract and validate entry path
     let entry_path = args.get_one::<Resource>("ENTRY_PATH").unwrap().clone();
     let (alias_or_url, bucket_name, entry_name) = entry_path.triple()?;
@@ -124,21 +136,41 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     // Build record with common metadata (labels, timestamp)
     let mut builder = bucket.write_record(&entry_name);
     builder = apply_labels(builder, args)?;
-    builder = apply_timestamp(builder, args)?;
+    let (builder, timestamp_us) = apply_timestamp(builder, args)?;
 
     // Handle file or string payload
     let file_path = args.get_one::<String>("path");
     let content_type = args.get_one::<String>("content-type");
+    let is_json = args.get_flag("json");
 
-    if let Some(path) = file_path {
-        write_file(builder, content_type, path, &bucket_name, &entry_name).await?;
+    let bytes_written = if let Some(path) = file_path {
+        write_file(
+            builder,
+            content_type,
+            path,
+            &bucket_name,
+            &entry_name,
+            is_json,
+        )
+        .await?
     } else {
-        write_string(builder, content_type, args).await?;
-    }
+        write_string(builder, content_type, args).await?
+    };
 
     // Output success message unless quiet
     if !args.get_flag("quiet") {
-        output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        if is_json {
+            let json = serde_json::json!({
+                "elapsed_ms": elapsed_ms,
+                "timestamp_us": timestamp_us,
+                "bytes_written": bytes_written
+            });
+            output!(ctx, "{}", json);
+        } else {
+            output!(ctx, "Record written to '{}/{}'", bucket_name, entry_name);
+        }
     }
 
     Ok(())
@@ -158,10 +190,11 @@ fn apply_labels(
 }
 
 /// Apply timestamp to the write record builder (from args or current time)
+/// Returns the builder and the timestamp value used
 fn apply_timestamp(
     builder: WriteRecordBuilder,
     args: &clap::ArgMatches,
-) -> anyhow::Result<WriteRecordBuilder> {
+) -> anyhow::Result<(WriteRecordBuilder, u64)> {
     let timestamp_us = if let Some(timestamp_str) = args.get_one::<String>("timestamp") {
         parse_time(Some(timestamp_str))
             .map_err(|e| anyhow::anyhow!("Invalid timestamp: {}", e))?
@@ -171,7 +204,7 @@ fn apply_timestamp(
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_micros() as u64
     };
-    Ok(builder.timestamp_us(timestamp_us))
+    Ok((builder.timestamp_us(timestamp_us), timestamp_us))
 }
 
 /// Determine content type from explicit arg or file extension
@@ -192,13 +225,15 @@ fn get_content_type(explicit: Option<&String>, file_path: &str) -> String {
 }
 
 /// Write a file record with progress tracking
+/// Returns the number of bytes written
 async fn write_file(
     builder: WriteRecordBuilder,
     content_type: Option<&String>,
     file_path: &str,
     bucket_name: &str,
     entry_name: &str,
-) -> anyhow::Result<()> {
+    is_json: bool,
+) -> anyhow::Result<u64> {
     let file = tokio::fs::File::open(file_path).await?;
     let metadata = file.metadata().await?;
 
@@ -218,34 +253,45 @@ async fn write_file(
     let content_type = get_content_type(content_type, file_path);
     let reader_stream = ReaderStream::new(file);
 
-    // Setup progress bar
-    let progress_bar = create_progress_bar(content_length, bucket_name, entry_name);
-    let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
+    if is_json {
+        // No progress bar in JSON mode
+        builder
+            .content_type(content_type)
+            .stream(reader_stream)
+            .content_length(content_length)
+            .send()
+            .await?;
+    } else {
+        // Setup progress bar
+        let progress_bar = create_progress_bar(content_length, bucket_name, entry_name);
+        let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
 
-    // Upload with progress tracking
-    builder
-        .content_type(content_type)
-        .stream(progress_stream)
-        .content_length(content_length)
-        .send()
-        .await?;
+        // Upload with progress tracking
+        builder
+            .content_type(content_type)
+            .stream(progress_stream)
+            .content_length(content_length)
+            .send()
+            .await?;
 
-    progress_bar.finish_with_message(format!(
-        "Uploaded {} to {}/{}",
-        ByteSize::b(content_length),
-        bucket_name,
-        entry_name
-    ));
+        progress_bar.finish_with_message(format!(
+            "Uploaded {} to {}/{}",
+            ByteSize::b(content_length),
+            bucket_name,
+            entry_name
+        ));
+    }
 
-    Ok(())
+    Ok(content_length)
 }
 
 /// Write a string record
+/// Returns the number of bytes written
 async fn write_string(
     builder: WriteRecordBuilder,
     content_type: Option<&String>,
     args: &clap::ArgMatches,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u64> {
     let content_type = content_type.map(|s| s.as_str()).unwrap_or("text/plain");
 
     let data = args
@@ -254,9 +300,11 @@ async fn write_string(
         .as_bytes()
         .to_vec();
 
+    let bytes_written = data.len() as u64;
+
     builder.content_type(content_type).data(data).send().await?;
 
-    Ok(())
+    Ok(bytes_written)
 }
 
 /// Create a progress bar for file upload
