@@ -119,7 +119,12 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Show sccache stats
-        run: sccache --show-stats
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --show-stats
+          else
+            echo "sccache is disabled for this build."
+          fi
 
       - name: Upload binary
         uses: actions/upload-artifact@v6
@@ -158,7 +163,12 @@ jobs:
         run: RS_API_TOKEN=TOKEN cargo test --locked -- --test-threads=1
 
       - name: Show sccache stats
-        run: sccache --show-stats
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --show-stats
+          else
+            echo "sccache is disabled for this build."
+          fi
 
 
   check_tag:
