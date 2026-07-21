@@ -12,6 +12,7 @@ mod parse;
 
 use crate::cmd::alias::{alias_cmd, alias_handler};
 use crate::cmd::attachment::{attachment_cmd, attachment_handler};
+use crate::cmd::write::{write_handler, write_record_cmd};
 use crate::context::ContextBuilder;
 use std::time::Duration;
 
@@ -77,6 +78,7 @@ fn cli() -> Command {
         .subcommand(lifecycle_cmd())
         .subcommand(cp_cmd())
         .subcommand(rm_cmd())
+        .subcommand(write_record_cmd())
 }
 
 #[tokio::main]
@@ -105,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
 
         Some(("cp", args)) => cp_handler(&ctx, args).await,
         Some(("rm", args)) => rm_handler(&ctx, args).await,
+        Some(("write", args)) => write_handler(&ctx, args).await,
         _ => Ok(()),
     };
 
