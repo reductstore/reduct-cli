@@ -133,6 +133,8 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     let client = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
 
+    let quiet = args.get_flag("quiet");
+
     // Build record with common metadata (labels, timestamp)
     let mut builder = bucket.write_record(&entry_name);
     builder = apply_labels(builder, args)?;
@@ -151,6 +153,7 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
             &bucket_name,
             &entry_name,
             is_json,
+            quiet,
         )
         .await?
     } else {
@@ -158,7 +161,7 @@ pub(crate) async fn write_handler(ctx: &CliContext, args: &clap::ArgMatches) -> 
     };
 
     // Output success message unless quiet
-    if !args.get_flag("quiet") {
+    if !quiet {
         let elapsed_ms = start.elapsed().as_millis() as u64;
 
         if is_json {
@@ -233,6 +236,7 @@ async fn write_file(
     bucket_name: &str,
     entry_name: &str,
     is_json: bool,
+    quiet: bool,
 ) -> anyhow::Result<u64> {
     let file = tokio::fs::File::open(file_path).await?;
     let metadata = file.metadata().await?;
@@ -254,7 +258,7 @@ async fn write_file(
     let reader_stream = ReaderStream::new(file);
 
     if is_json {
-        // No progress bar in JSON mode
+        // No progress bar in JSON or quiet mode
         builder
             .content_type(content_type)
             .stream(reader_stream)
@@ -262,24 +266,26 @@ async fn write_file(
             .send()
             .await?;
     } else {
-        // Setup progress bar
-        let progress_bar = create_progress_bar(content_length, bucket_name, entry_name);
-        let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
-
-        // Upload with progress tracking
-        builder
+        let builder = builder
             .content_type(content_type)
-            .stream(progress_stream)
-            .content_length(content_length)
-            .send()
-            .await?;
+            .content_length(content_length);
 
-        progress_bar.finish_with_message(format!(
-            "Uploaded {} to {}/{}",
-            ByteSize::b(content_length),
-            bucket_name,
-            entry_name
-        ));
+        if !quiet {
+            // Setup progress bar
+            let progress_bar = create_progress_bar(content_length, bucket_name, entry_name);
+            let progress_stream = ProgressStream::new(reader_stream, progress_bar.clone());
+            // Upload with progress tracking
+            builder.stream(progress_stream).send().await?;
+
+            progress_bar.finish_with_message(format!(
+                "Uploaded {} to {}/{}",
+                ByteSize::b(content_length),
+                bucket_name,
+                entry_name
+            ));
+        } else {
+            builder.stream(reader_stream).send().await?;
+        }
     }
 
     Ok(content_length)
