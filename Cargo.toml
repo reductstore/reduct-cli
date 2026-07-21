@@ -21,13 +21,16 @@ toml = "1.0.6"
 serde = { version = "1.0.219", features = ["derive"] }
 anyhow = "1.0.98"
 url = { version = "2.5.4", features = ["serde"] }
-tokio = { version = "1.52.3", features = ["rt-multi-thread"] }
+tokio = { version = "1.52.3", features = ["io-util", "net", "rt-multi-thread", "time"] }
 time-humanize = "0.1.3"
 bytesize = "2.3.1"
 colored = "3.0.0"
 chrono = "0.4.41"
 dialoguer = "0.12.0"
 futures-util = { version = "0.3.30", features = [] }
+http-body-util = "0.1.3"
+hyper = { version = "1.10.1", features = ["http1", "server"] }
+hyper-util = { version = "0.1.20", features = ["tokio"] }
 indicatif = "0.18.3"
 async-trait = "0.1.89"
 bytes = "1.11.0"

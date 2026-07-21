@@ -7,6 +7,7 @@ pub(crate) mod attachment;
 pub(crate) mod bucket;
 pub(crate) mod cp;
 pub(crate) mod lifecycle;
+pub(crate) mod login;
 pub(crate) mod replica;
 pub(crate) mod rm;
 pub(crate) mod server;
