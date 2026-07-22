@@ -126,11 +126,8 @@ async fn main() -> anyhow::Result<()> {
     if let Err(err) = result {
         // Do not output json if the command is "cp"
         if matches.get_flag("json") && command != "cp" {
-            let json_error = json!({
-                "status": "error",
-                "error_message":  err.to_string(),
-            });
-            eprintln!("{}", serde_json::to_string_pretty(&json_error).unwrap());
+            let json_error = print_json_error(&err);
+            eprintln!("{}", serde_json::to_string_pretty(&json_error)?);
             std::process::exit(1);
         }
 
@@ -139,4 +136,20 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn print_json_error(err: &anyhow::Error) -> serde_json::Value {
+    // Try to downcast to ReductError to get the status code
+    let (status_code, error_message) =
+        if let Some(reduct_err) = err.downcast_ref::<reduct_rs::ReductError>() {
+            (reduct_err.status() as i32, reduct_err.message().to_string())
+        } else {
+            // If not a ReductError, use 1 as unknown status
+            (1, err.to_string())
+        };
+
+    json!({
+        "status_code": status_code,
+        "error_message": error_message,
+    })
 }
