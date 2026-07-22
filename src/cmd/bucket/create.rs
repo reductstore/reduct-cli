@@ -25,18 +25,23 @@ pub(super) async fn create_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .unwrap()
         .clone()
         .pair()?;
-    let is_json = args.get_flag("json");
+
+    let is_json = args
+        .try_get_one::<bool>("json")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
+
     let bucket_settings = parse_bucket_settings(args);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
-    // .map_err(|err| anyhow::anyhow!(get_json_error(err.to_string(), is_json)))?;
 
     client
         .create_bucket(&bucket_name)
         .settings(bucket_settings)
         .send()
         .await?;
-    // .map_err(|err| anyhow::anyhow!(get_json_error(err.to_string(), is_json)))?;
 
     if !is_json {
         output!(ctx, "Bucket '{}' created", bucket_name);
