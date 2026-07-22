@@ -12,6 +12,7 @@ use crate::io::std::output;
 use crate::parse::Resource;
 use clap::{ArgMatches, Command};
 use reduct_rs::ReductClient;
+use serde_json::json;
 
 pub(super) fn create_bucket_cmd() -> Command {
     let cmd = Command::new("create").about("Create a bucket");
@@ -24,16 +25,31 @@ pub(super) async fn create_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .unwrap()
         .clone()
         .pair()?;
+
+    let is_json = args
+        .try_get_one::<bool>("json")
+        .ok()
+        .flatten()
+        .copied()
+        .unwrap_or(false);
+
     let bucket_settings = parse_bucket_settings(args);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
+
     client
         .create_bucket(&bucket_name)
         .settings(bucket_settings)
         .send()
         .await?;
 
-    output!(ctx, "Bucket '{}' created", bucket_name);
+    if !is_json {
+        output!(ctx, "Bucket '{}' created", bucket_name);
+    } else {
+        ctx.stdout()
+            .print(serde_json::to_string_pretty(&json!({})).unwrap().as_str());
+    }
+
     Ok(())
 }
 

@@ -14,6 +14,7 @@ use crate::cmd::alias::{alias_cmd, alias_handler};
 use crate::cmd::attachment::{attachment_cmd, attachment_handler};
 use crate::cmd::write::{write_handler, write_record_cmd};
 use crate::context::ContextBuilder;
+use serde_json::json;
 use std::time::Duration;
 
 use crate::cmd::bucket::{bucket_cmd, bucket_handler};
@@ -69,6 +70,15 @@ fn cli() -> Command {
                 .required(false)
                 .global(true),
         )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .short('j')
+                .help("Print output in JSON format")
+                .required(false)
+                .action(SetTrue)
+                .global(true),
+        )
         .subcommand(alias_cmd())
         .subcommand(attachment_cmd())
         .subcommand(server_cmd())
@@ -111,10 +121,35 @@ async fn main() -> anyhow::Result<()> {
         _ => Ok(()),
     };
 
+    let command = matches.subcommand().unwrap().0;
+
     if let Err(err) = result {
+        // Do not output json if the command is "cp"
+        if matches.get_flag("json") && command != "cp" {
+            let json_error = print_json_error(&err);
+            eprintln!("{}", serde_json::to_string_pretty(&json_error)?);
+            std::process::exit(1);
+        }
+
         eprintln!("{}", err.to_string().red().bold(),);
         std::process::exit(1);
     }
 
     Ok(())
+}
+
+fn print_json_error(err: &anyhow::Error) -> serde_json::Value {
+    // Try to downcast to ReductError to get the status code
+    let (status_code, error_message) =
+        if let Some(reduct_err) = err.downcast_ref::<reduct_rs::ReductError>() {
+            (reduct_err.status() as i32, reduct_err.message().to_string())
+        } else {
+            // If not a ReductError, use 1 as unknown status
+            (1, err.to_string())
+        };
+
+    json!({
+        "status_code": status_code,
+        "error_message": error_message,
+    })
 }
