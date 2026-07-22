@@ -14,6 +14,7 @@ use crate::cmd::alias::{alias_cmd, alias_handler};
 use crate::cmd::attachment::{attachment_cmd, attachment_handler};
 use crate::cmd::write::{write_handler, write_record_cmd};
 use crate::context::ContextBuilder;
+use serde_json::json;
 use std::time::Duration;
 
 use crate::cmd::bucket::{bucket_cmd, bucket_handler};
@@ -69,6 +70,15 @@ fn cli() -> Command {
                 .required(false)
                 .global(true),
         )
+        .arg(
+            Arg::new("json")
+                .long("json")
+                .short('j')
+                .help("Print output in JSON format")
+                .required(false)
+                .action(SetTrue)
+                .global(true),
+        )
         .subcommand(alias_cmd())
         .subcommand(attachment_cmd())
         .subcommand(server_cmd())
@@ -111,7 +121,19 @@ async fn main() -> anyhow::Result<()> {
         _ => Ok(()),
     };
 
+    let command = matches.subcommand().unwrap().0;
+
     if let Err(err) = result {
+        // Do not output json if the command is "cp"
+        if matches.get_flag("json") && command != "cp" {
+            let json_error = json!({
+                "status": "error",
+                "error_message":  err.to_string(),
+            });
+            eprintln!("{}", serde_json::to_string_pretty(&json_error).unwrap());
+            std::process::exit(1);
+        }
+
         eprintln!("{}", err.to_string().red().bold(),);
         std::process::exit(1);
     }
