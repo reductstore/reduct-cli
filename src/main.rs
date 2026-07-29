@@ -98,12 +98,14 @@ async fn main() -> anyhow::Result<()> {
     let timeout = matches.get_one::<u64>("timeout").copied();
     let parallel = matches.get_one::<usize>("parallel").copied();
     let ca_cert = matches.get_one::<String>("ca-cert").cloned();
+    let json = matches.get_one::<bool>("json").cloned();
 
     let ctx = ContextBuilder::new()
         .ignore_ssl(ignore_ssl)
         .timeout(timeout.map(Duration::from_secs))
         .parallel(parallel)
         .ca_cert(ca_cert)
+        .json(json)
         .build();
 
     let result = match matches.subcommand() {

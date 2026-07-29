@@ -19,6 +19,7 @@ pub(crate) struct CliContext {
     timeout: Option<Duration>,
     parallel: Option<usize>,
     ca_cert: Option<String>,
+    json: Option<bool>,
 }
 
 impl CliContext {
@@ -44,6 +45,10 @@ impl CliContext {
     pub(crate) fn ca_cert(&self) -> Option<&String> {
         self.ca_cert.as_ref()
     }
+
+    pub(crate) fn json(&self) -> Option<bool> {
+        self.json
+    }
 }
 
 pub(crate) struct ContextBuilder {
@@ -59,6 +64,7 @@ impl ContextBuilder {
             timeout: None,
             parallel: None,
             ca_cert: None,
+            json: None,
         };
         config.config_path = match home_dir() {
             Some(path) => path
@@ -104,6 +110,11 @@ impl ContextBuilder {
 
     pub(crate) fn ca_cert(mut self, ca_cert: Option<String>) -> Self {
         self.config.ca_cert = ca_cert;
+        self
+    }
+
+    pub(crate) fn json(mut self, json: Option<bool>) -> Self {
+        self.config.json = json;
         self
     }
 
