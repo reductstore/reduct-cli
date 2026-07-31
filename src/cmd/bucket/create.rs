@@ -172,17 +172,18 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_create_bucket_successfully_json(_context: CliContext, #[future] bucket: String) {
+    async fn test_create_bucket_successfully_json(context: CliContext, #[future] bucket: String) {
         let args = create_bucket_cmd()
             .get_matches_from(vec!["create", format!("local/{}", bucket.await).as_str()]);
 
         let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
             .json(Some(true))
             .output(Box::new(MockOutput::new()))
             .build();
 
         create_bucket(&ctx, &args).await.unwrap();
 
-        assert_eq!(ctx.stdout().history(), vec![format!("{{}}")]);
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }
