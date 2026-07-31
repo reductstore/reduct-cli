@@ -173,7 +173,6 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_create_bucket_successfully_json(_context: CliContext, #[future] bucket: String) {
-
         let args = create_bucket_cmd()
             .get_matches_from(vec!["create", format!("local/{}", bucket.await).as_str()]);
 
