@@ -51,11 +51,20 @@ pub(super) async fn rm_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
         .unwrap_or_default()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
+    let is_json = ctx.json().unwrap_or(false);
 
     if !only_entries.is_empty() {
-        remove_entries(ctx, args, &alias_or_url, &bucket_name, only_entries).await?;
+        remove_entries(
+            ctx,
+            args,
+            &alias_or_url,
+            &bucket_name,
+            only_entries,
+            is_json,
+        )
+        .await?;
     } else {
-        remove_entire_bucket(ctx, args, &alias_or_url, &bucket_name).await?;
+        remove_entire_bucket(ctx, args, &alias_or_url, &bucket_name, is_json).await?;
     }
     Ok(())
 }
@@ -65,6 +74,7 @@ async fn remove_entire_bucket(
     args: &ArgMatches,
     alias_or_url: &String,
     bucket_name: &String,
+    is_json: bool,
 ) -> anyhow::Result<()> {
     let yes = args.get_flag("yes");
     let confirm = if !yes {
@@ -84,9 +94,17 @@ async fn remove_entire_bucket(
         let client: ReductClient = build_client(ctx, &alias_or_url).await?;
         client.get_bucket(&bucket_name).await?.remove().await?;
 
-        output!(ctx, "Bucket '{}' deleted", bucket_name);
+        if !is_json {
+            output!(ctx, "Bucket '{}' deleted", bucket_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     } else {
-        output!(ctx, "Bucket '{}' not deleted", bucket_name);
+        if !is_json {
+            output!(ctx, "Bucket '{}' not deleted", bucket_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     }
     Ok(())
 }
@@ -97,6 +115,7 @@ async fn remove_entries(
     alias_or_url: &String,
     bucket_name: &String,
     only_entries: Vec<String>,
+    is_json: bool,
 ) -> anyhow::Result<()> {
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
@@ -107,7 +126,11 @@ async fn remove_entries(
         .map(|entry| entry.name.clone())
         .collect::<Vec<String>>();
     if entries.is_empty() {
-        output!(ctx, "No entries found to delete");
+        if !is_json {
+            output!(ctx, "No entries found to delete");
+        } else {
+            output!(ctx, "{}", "{}");
+        }
         return Ok(());
     }
 
@@ -129,10 +152,17 @@ async fn remove_entries(
         for entry in &entries {
             bucket.remove_entry(entry).await?;
         }
-
-        output!(ctx, "Entries {:?} deleted", entries);
+        if !is_json {
+            output!(ctx, "Entries {:?} deleted", entries);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     } else {
-        output!(ctx, "Entries {:?} not deleted", entries);
+        if !is_json {
+            output!(ctx, "Entries {:?} not deleted", entries);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     }
     Ok(())
 }
@@ -140,7 +170,10 @@ async fn remove_entries(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use bytes::Bytes;
     use reduct_rs::ErrorCode;
     use rstest::*;
@@ -246,5 +279,66 @@ mod tests {
                 .status(),
             ErrorCode::NotFound
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rm_bucket_json(context: CliContext, #[future] bucket: String) {
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let bucket_name = bucket.await;
+        let client = build_client(&ctx, "local").await.unwrap();
+        client.create_bucket(&bucket_name).send().await.unwrap();
+
+        let args = rm_bucket_cmd().get_matches_from(vec![
+            "rm",
+            format!("local/{}", bucket_name).as_str(),
+            "--yes",
+        ]);
+
+        rm_bucket(&ctx, &args).await.unwrap();
+
+        wait_for_bucket_removed(&client, &bucket_name).await;
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rm_bucket_only_entries_json(context: CliContext, #[future] bucket: String) {
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let bucket_name = bucket.await;
+        let client = build_client(&ctx, "local").await.unwrap();
+        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+
+        bucket
+            .write_record("test")
+            .data(Bytes::from_static(b"test"))
+            .send()
+            .await
+            .unwrap();
+
+        let args = rm_bucket_cmd().get_matches_from(vec![
+            "rm",
+            format!("local/{}", bucket_name).as_str(),
+            "--yes",
+            "--only-entries",
+            "test",
+        ]);
+
+        rm_bucket(&ctx, &args).await.unwrap();
+
+        wait_for_empty_entries(&client, &bucket_name).await;
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }
