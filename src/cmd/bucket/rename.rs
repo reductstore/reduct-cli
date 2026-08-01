@@ -211,7 +211,7 @@ mod tests {
             "JSON output is empty - {{}}"
         );
 
-        let bucket = client.get_bucket("new_bucket").await.unwrap();
+        let bucket = client.get_bucket("new_renamed_bucket").await.unwrap();
         bucket.remove().await.unwrap();
     }
 }

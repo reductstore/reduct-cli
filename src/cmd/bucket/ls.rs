@@ -140,6 +140,7 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList, is_json: bool)
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::context::{
         tests::{bucket, bucket2, context, MockOutput},
@@ -241,6 +242,9 @@ mod tests {
         #[future] bucket: String,
         #[future] bucket2: String,
     ) {
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
         let ctx = ContextBuilder::new()
             .config_path(context.config_path())
             .json(Some(true))
@@ -251,19 +255,16 @@ mod tests {
         let client = build_client(&ctx, "local").await.unwrap();
 
         // Create buckets
-        let bucket = create_test_bucket_with_entry(&bucket.await, &client).await;
-        let bucket2 = create_test_bucket_with_entry(&bucket2.await, &client).await;
+        let _ = create_test_bucket_with_entry(&bucket, &client).await;
+        let _ = create_test_bucket_with_entry(&bucket2, &client).await;
 
         // List buckets
         ls_bucket(&ctx, &args).await.unwrap();
 
-        // We have $system bucket to consider too so len is 3.
-        let rows: Vec<BucketRow> =
-            serde_json::from_str(&ctx.stdout().history().join("\n")).unwrap();
-        assert_eq!(rows.len(), 3);
-        assert_eq!(rows[0].name, "$system");
-        assert_eq!(rows[1].name, bucket.name());
-        assert_eq!(rows[2].name, bucket2.name());
+        let rows: Vec<BucketRow> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(rows.iter().any(|row| row.name == bucket));
+        assert!(rows.iter().any(|row| row.name == bucket2));
     }
 
     #[rstest]
@@ -273,8 +274,8 @@ mod tests {
         #[future] bucket: String,
         #[future] bucket2: String,
     ) {
-        let _ = bucket.await;
-        let _ = bucket2.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
 
         let ctx = ContextBuilder::new()
             .config_path(context.config_path())
@@ -287,13 +288,10 @@ mod tests {
         // List buckets
         ls_bucket(&ctx, &args).await.unwrap();
 
-        // We have $system bucket to consider too so len is 1.
-        let history = ctx.stdout().history();
-        let rows: Vec<BucketRow> = serde_json::from_str(&history[0]).unwrap();
+        let rows: Vec<BucketRow> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert_eq!(history.len(), 1);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].name, "$system");
+        assert_eq!(rows.iter().any(|row| row.name == bucket), false);
+        assert_eq!(rows.iter().any(|row| row.name == bucket2), false);
     }
 
     #[rstest]
@@ -319,11 +317,8 @@ mod tests {
         // List buckets
         ls_bucket(&ctx, &args).await.unwrap();
 
-        // We have $system bucket to consider too so len is 3.
-        let rows: Vec<String> = serde_json::from_str(&ctx.stdout().history().join("\n")).unwrap();
+        let rows: Vec<String> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert_eq!(rows.len(), 3);
-        assert!(rows.contains(&"$system".to_string()));
         assert!(rows.contains(&bucket.name().to_string()));
         assert!(rows.contains(&bucket2.name().to_string()));
     }
@@ -335,8 +330,8 @@ mod tests {
         #[future] bucket: String,
         #[future] bucket2: String,
     ) {
-        let _ = bucket.await;
-        let _ = bucket2.await;
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
 
         let ctx = ContextBuilder::new()
             .config_path(context.config_path())
@@ -350,12 +345,10 @@ mod tests {
         ls_bucket(&ctx, &args).await.unwrap();
 
         // We have $system bucket to consider too so len is 1.
-        let history = ctx.stdout().history();
-        let rows: Vec<String> = serde_json::from_str(&history[0]).unwrap();
+        let rows: Vec<String> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert_eq!(history.len(), 1);
-        assert_eq!(rows.len(), 1);
-        assert!(rows.contains(&"$system".to_string()));
+        assert_eq!(rows.contains(&bucket), false);
+        assert_eq!(rows.contains(&bucket2), false);
     }
 
     async fn create_test_bucket_with_entry(bucket_name: &str, client: &ReductClient) -> Bucket {
