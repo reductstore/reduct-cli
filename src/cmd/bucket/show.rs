@@ -15,6 +15,7 @@ use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::{EntryInfo, FullBucketInfo, ReductClient};
+use serde::Serialize;
 use tabled::{settings::Style, Table, Tabled};
 
 pub(super) fn show_bucket_cmd() -> Command {
@@ -36,7 +37,7 @@ pub(super) fn show_bucket_cmd() -> Command {
         )
 }
 
-#[derive(Tabled)]
+#[derive(Clone, Serialize, Tabled)]
 struct EntryTable {
     #[tabled(rename = "Name")]
     name: String,
@@ -76,14 +77,15 @@ pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::
         .unwrap()
         .clone()
         .pair()?;
+    let is_json = ctx.json().unwrap_or(false);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?.full_info().await?;
 
     if args.get_flag("full") {
-        print_full_bucket(ctx, bucket)?;
+        print_full_bucket(ctx, bucket, is_json)?;
     } else {
-        print_bucket(ctx, bucket)?;
+        print_bucket(ctx, bucket, is_json)?;
     }
 
     Ok(())
@@ -96,13 +98,40 @@ fn record_range_cells_compact(oldest: u64, latest: u64, is_empty: bool) -> Vec<S
         .collect()
 }
 
-fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
+fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo, is_json: bool) -> anyhow::Result<()> {
     let info = bucket.info;
     let total_blocks = bucket
         .entries
         .iter()
         .map(|entry| entry.block_count)
         .sum::<u64>();
+
+    let record_data = record_range_cells_compact(
+        info.oldest_record,
+        info.latest_record,
+        info.entry_count == 0,
+    );
+
+    if is_json {
+        let bucket_json = serde_json::json!({
+            "name": info.name,
+            "entries": info.entry_count,
+            "blocks": total_blocks,
+            "size": ByteSize(info.size).display().si().to_string(),
+            "status": print_bucket_status(&info.status),
+            "provisioned": if info.is_provisioned { "✓" } else { "-" },
+            "Oldest Record (UTC)": record_data[0].split_once(": ").unwrap().1,
+            "Latest Record (UTC)": record_data[1].split_once(": ").unwrap().1,
+        });
+
+        output!(
+            ctx,
+            "{}",
+            serde_json::to_string_pretty(&bucket_json).unwrap()
+        );
+        return Ok(());
+    }
+
     let mut info_cells = vec![
         labeled_cell("Name", info.name),
         labeled_cell("Entries", info.entry_count),
@@ -111,11 +140,8 @@ fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> 
         labeled_cell("Status", print_bucket_status(&info.status)),
         labeled_cell("Provisioned", if info.is_provisioned { "✓" } else { "-" }),
     ];
-    info_cells.extend(record_range_cells_compact(
-        info.oldest_record,
-        info.latest_record,
-        info.entry_count == 0,
-    ));
+
+    info_cells.extend(record_data);
 
     let info_table = build_info_table_with_columns(info_cells, 1);
 
@@ -124,7 +150,11 @@ fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
+fn print_full_bucket(
+    ctx: &CliContext,
+    bucket: FullBucketInfo,
+    is_json: bool,
+) -> anyhow::Result<()> {
     let settings = bucket.settings;
     let info = bucket.info;
     let total_blocks = bucket
@@ -132,6 +162,45 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
         .iter()
         .map(|entry| entry.block_count)
         .sum::<u64>();
+
+    let record_data = record_range_cells_compact(
+        info.oldest_record,
+        info.latest_record,
+        info.entry_count == 0,
+    );
+
+    let entries = bucket.entries.into_iter().map(EntryTable::from);
+    let entries: Vec<EntryTable> = entries.collect::<Vec<EntryTable>>();
+
+    if is_json {
+        let bucket_json = serde_json::json!({
+            "name": info.name,
+            "quota_type": settings.quota_type.as_ref(),
+            "entry_count": info.entry_count,
+            "quota_size": ByteSize(settings.quota_size.unwrap()).display().si().to_string(),
+            "size": ByteSize(info.size).display().si().to_string(),
+            "max_block_size": ByteSize(settings.max_block_size.unwrap()).display().si().to_string(),
+            "blocks": total_blocks,
+            "max_block_records": settings.max_block_records.unwrap(),
+            "status": print_bucket_status(&info.status),
+            "provisioned": if info.is_provisioned { "✓" } else { "-" },
+        });
+
+        let mut entries_json = serde_json::json!([]);
+        let entries_json = entries_json.as_array_mut().unwrap();
+        for entry in entries {
+            entries_json.push(serde_json::json!(entry));
+        }
+
+        let json = serde_json::json!({
+            "bucket": bucket_json,
+            "entries": entries_json,
+        });
+
+        output!(ctx, "{}", serde_json::to_string_pretty(&json).unwrap());
+        return Ok(());
+    }
+
     let mut info_cells = vec![
         labeled_cell("Name", info.name),
         labeled_cell("Quota Type", settings.quota_type.unwrap()),
@@ -158,11 +227,7 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
         labeled_cell("Provisioned", if info.is_provisioned { "✓" } else { "-" }),
         String::new(),
     ];
-    for cell in record_range_cells_compact(
-        info.oldest_record,
-        info.latest_record,
-        info.entry_count == 0,
-    ) {
+    for cell in record_data {
         info_cells.push(cell);
         info_cells.push(String::new());
     }
@@ -172,7 +237,6 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
     output!(ctx, "{}", info_table);
     output!(ctx, "");
 
-    let entries = bucket.entries.into_iter().map(EntryTable::from);
     let table = Table::new(entries).with(Style::markdown()).to_string();
     output!(ctx, "{}", table);
 
@@ -182,7 +246,10 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::ResourceStatus;
     use rstest::rstest;
 
@@ -316,5 +383,96 @@ mod tests {
         assert_eq!(row.status, "🗑 Deleting");
         assert_eq!(row.oldest_record, "---");
         assert_eq!(row.latest_record, "---");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_show_bucket_json(context: CliContext, #[future] bucket: String) {
+        let bucket_name = bucket.await;
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket_name).send().await.unwrap();
+
+        let args = show_bucket_cmd()
+            .get_matches_from(vec!["show", format!("local/{}", bucket_name).as_str()]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        show_bucket(&ctx, &args).await.unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert_eq!(json["name"], bucket_name);
+        assert_eq!(json["entries"], 0);
+        assert_eq!(json["blocks"], 0);
+        assert_eq!(json["size"], "0 B");
+        assert_eq!(json["status"], "✅ Ready");
+        assert_eq!(json["provisioned"], "-");
+        assert_eq!(json["Oldest Record (UTC)"], "---");
+        assert_eq!(json["Latest Record (UTC)"], "---");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_show_bucket_full_json(context: CliContext, #[future] bucket: String) {
+        let bucket_name = bucket.await;
+        let client = build_client(&context, "local").await.unwrap();
+        let bucket = client.create_bucket(&bucket_name).send().await.unwrap();
+        bucket
+            .write_record("test")
+            .data("data")
+            .timestamp_us(1)
+            .send()
+            .await
+            .unwrap();
+        bucket
+            .write_record("test")
+            .data("data")
+            .timestamp_us(1000)
+            .send()
+            .await
+            .unwrap();
+
+        let args = show_bucket_cmd().get_matches_from(vec![
+            "show",
+            format!("local/{}", bucket_name).as_str(),
+            "--full",
+        ]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        show_bucket(&ctx, &args).await.unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        // Verify bucket
+        let json_bucket = &json["bucket"];
+        assert_eq!(json_bucket["name"], bucket_name);
+        assert_eq!(json_bucket["quota_type"], "NONE");
+        assert_eq!(json_bucket["entry_count"], 1);
+        assert_eq!(json_bucket["quota_size"], "0 B");
+        assert_eq!(json_bucket["size"], "77 B");
+        assert_eq!(json_bucket["max_block_size"], "64.0 MB");
+        assert_eq!(json_bucket["blocks"], 1);
+        assert_eq!(json_bucket["max_block_records"], 1024);
+        assert_eq!(json_bucket["status"], "✅ Ready");
+        assert_eq!(json_bucket["provisioned"], "-");
+
+        // Verify entries
+        let json_entries = &json["entries"];
+        assert_eq!(json_entries[0]["name"], "test");
+        assert_eq!(json_entries[0]["record_count"], 2);
+        assert_eq!(json_entries[0]["block_count"], 1);
+        assert_eq!(json_entries[0]["status"], "✅ Ready");
+        assert_eq!(json_entries[0]["size"], "77 B");
+        assert_eq!(json_entries[0]["oldest_record"], "1970-01-01T00:00:00Z");
+        assert_eq!(json_entries[0]["latest_record"], "1970-01-01T00:00:00Z");
     }
 }
