@@ -118,17 +118,13 @@ fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> 
             "entries": info.entry_count,
             "blocks": total_blocks,
             "size": ByteSize(info.size).display().si().to_string(),
-            "status": print_bucket_status(&info.status),
-            "provisioned": if info.is_provisioned { "✓" } else { "-" },
+            "status": format!("{:?}", &info.status),
+            "provisioned": format!("{:?}", info.is_provisioned),
             "Oldest Record (UTC)": record_data[0].split_once(": ").unwrap().1,
             "Latest Record (UTC)": record_data[1].split_once(": ").unwrap().1,
         });
 
-        output!(
-            ctx,
-            "{}",
-            serde_json::to_string_pretty(&bucket_json).unwrap()
-        );
+        output!(ctx, "{}", serde_json::to_string(&bucket_json).unwrap());
         return Ok(());
     }
 
@@ -179,13 +175,15 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
             "max_block_size": ByteSize(settings.max_block_size.unwrap()).display().si().to_string(),
             "blocks": total_blocks,
             "max_block_records": settings.max_block_records.unwrap(),
-            "status": print_bucket_status(&info.status),
-            "provisioned": if info.is_provisioned { "✓" } else { "-" },
+            "status": format!("{:?}", &info.status),
+            "provisioned": format!("{:?}", info.is_provisioned),
         });
 
         let mut entries_json = serde_json::json!([]);
         let entries_json = entries_json.as_array_mut().unwrap();
-        for entry in entries {
+        for mut entry in entries {
+            // We need to make status machine readable for json. We do it by removing a sign before the actual status.
+            entry.status = entry.status.split(" ").collect::<Vec<_>>()[1].to_string();
             entries_json.push(serde_json::json!(entry));
         }
 
@@ -194,7 +192,7 @@ fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result
             "entries": entries_json,
         });
 
-        output!(ctx, "{}", serde_json::to_string_pretty(&json).unwrap());
+        output!(ctx, "{}", serde_json::to_string(&json).unwrap());
         return Ok(());
     }
 
@@ -406,8 +404,8 @@ mod tests {
         assert_eq!(json["entries"], 0);
         assert_eq!(json["blocks"], 0);
         assert_eq!(json["size"], "0 B");
-        assert_eq!(json["status"], "✅ Ready");
-        assert_eq!(json["provisioned"], "-");
+        assert_eq!(json["status"], "Ready");
+        assert_eq!(json["provisioned"], "false");
         assert_eq!(json["Oldest Record (UTC)"], "---");
         assert_eq!(json["Latest Record (UTC)"], "---");
     }
@@ -459,15 +457,15 @@ mod tests {
         assert_eq!(json_bucket["max_block_size"], "64.0 MB");
         assert_eq!(json_bucket["blocks"], 1);
         assert_eq!(json_bucket["max_block_records"], 1024);
-        assert_eq!(json_bucket["status"], "✅ Ready");
-        assert_eq!(json_bucket["provisioned"], "-");
+        assert_eq!(json_bucket["status"], "Ready");
+        assert_eq!(json_bucket["provisioned"], "false");
 
         // Verify entries
         let json_entries = &json["entries"];
         assert_eq!(json_entries[0]["name"], "test");
         assert_eq!(json_entries[0]["record_count"], 2);
         assert_eq!(json_entries[0]["block_count"], 1);
-        assert_eq!(json_entries[0]["status"], "✅ Ready");
+        assert_eq!(json_entries[0]["status"], "Ready");
         assert_eq!(json_entries[0]["size"], "77 B");
         assert_eq!(json_entries[0]["oldest_record"], "1970-01-01T00:00:00Z");
         assert_eq!(json_entries[0]["latest_record"], "1970-01-01T00:00:00Z");

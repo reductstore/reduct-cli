@@ -57,7 +57,7 @@ fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
             .iter()
             .map(|bucket| bucket.name.as_str())
             .collect::<Vec<_>>();
-        output!(ctx, "{}", serde_json::to_string_pretty(&buckets).unwrap());
+        output!(ctx, "{}", serde_json::to_string(&buckets).unwrap());
         return;
     }
     for bucket in bucket_list.buckets {
@@ -121,11 +121,19 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
                 name: bucket.name,
                 entries: bucket.entry_count,
                 size: ByteSize(bucket.size).display().si().to_string(),
-                status: print_bucket_status(&bucket.status),
-                provisioned: if bucket.is_provisioned {
-                    "✓".to_string()
+                status: if is_json {
+                    format!("{:?}", &bucket.status)
                 } else {
-                    "-".to_string()
+                    print_bucket_status(&bucket.status)
+                },
+                provisioned: if is_json {
+                    bucket.is_provisioned.to_string()
+                } else {
+                    if bucket.is_provisioned {
+                        "✓".to_string()
+                    } else {
+                        "-".to_string()
+                    }
                 },
                 oldest_record,
                 latest_record,
@@ -134,7 +142,7 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
         .collect::<Vec<_>>();
 
     if is_json {
-        output!(ctx, "{}", serde_json::to_string_pretty(&rows).unwrap());
+        output!(ctx, "{}", serde_json::to_string(&rows).unwrap());
         return;
     }
     let table = Table::new(rows).with(Style::markdown()).to_string();

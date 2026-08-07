@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
         // Do not output json if the command is "cp"
         if matches.get_flag("json") && command != "cp" {
             let json_error = print_json_error(&err);
-            eprintln!("{}", serde_json::to_string_pretty(&json_error)?);
+            eprintln!("{}", serde_json::to_string(&json_error)?);
             std::process::exit(1);
         }
 
