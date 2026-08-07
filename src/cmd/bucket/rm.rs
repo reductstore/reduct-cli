@@ -51,20 +51,11 @@ pub(super) async fn rm_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
         .unwrap_or_default()
         .map(|s| s.to_string())
         .collect::<Vec<String>>();
-    let is_json = ctx.json().unwrap_or(false);
 
     if !only_entries.is_empty() {
-        remove_entries(
-            ctx,
-            args,
-            &alias_or_url,
-            &bucket_name,
-            only_entries,
-            is_json,
-        )
-        .await?;
+        remove_entries(ctx, args, &alias_or_url, &bucket_name, only_entries).await?;
     } else {
-        remove_entire_bucket(ctx, args, &alias_or_url, &bucket_name, is_json).await?;
+        remove_entire_bucket(ctx, args, &alias_or_url, &bucket_name).await?;
     }
     Ok(())
 }
@@ -74,9 +65,9 @@ async fn remove_entire_bucket(
     args: &ArgMatches,
     alias_or_url: &String,
     bucket_name: &String,
-    is_json: bool,
 ) -> anyhow::Result<()> {
     let yes = args.get_flag("yes");
+    let is_json = ctx.json().unwrap_or(false);
     let confirm = if !yes {
         let confirm = dialoguer::Confirm::new()
             .default(false)
@@ -115,10 +106,10 @@ async fn remove_entries(
     alias_or_url: &String,
     bucket_name: &String,
     only_entries: Vec<String>,
-    is_json: bool,
 ) -> anyhow::Result<()> {
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
+    let is_json = ctx.json().unwrap_or(false);
 
     let entries = fetch_and_filter_entries(&bucket, &only_entries)
         .await?

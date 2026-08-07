@@ -36,20 +36,21 @@ pub(super) fn ls_bucket_cmd() -> Command {
 
 pub(super) async fn ls_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     let alias_or_url = args.get_one::<String>("ALIAS_OR_URL").unwrap();
-    let is_json = ctx.json().unwrap_or(false);
 
     let client = build_client(ctx, alias_or_url).await?;
 
     let bucket_list = client.bucket_list().await?;
     if args.get_flag("full") {
-        print_full_list(ctx, bucket_list, is_json);
+        print_full_list(ctx, bucket_list);
     } else {
-        print_list(ctx, bucket_list, is_json);
+        print_list(ctx, bucket_list);
     }
     Ok(())
 }
 
-fn print_list(ctx: &CliContext, bucket_list: BucketInfoList, is_json: bool) {
+fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
+    let is_json = ctx.json().unwrap_or(false);
+
     if is_json {
         let buckets = bucket_list
             .buckets
@@ -97,7 +98,9 @@ fn record_range_values(oldest: u64, latest: u64, is_empty: bool) -> (String, Str
     (oldest_value, latest_value)
 }
 
-fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList, is_json: bool) {
+fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
+    let is_json = ctx.json().unwrap_or(false);
+
     if bucket_list.buckets.is_empty() {
         if is_json {
             output!(ctx, "{}", "[]");

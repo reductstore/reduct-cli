@@ -77,15 +77,14 @@ pub(super) async fn show_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::
         .unwrap()
         .clone()
         .pair()?;
-    let is_json = ctx.json().unwrap_or(false);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?.full_info().await?;
 
     if args.get_flag("full") {
-        print_full_bucket(ctx, bucket, is_json)?;
+        print_full_bucket(ctx, bucket)?;
     } else {
-        print_bucket(ctx, bucket, is_json)?;
+        print_bucket(ctx, bucket)?;
     }
 
     Ok(())
@@ -98,7 +97,8 @@ fn record_range_cells_compact(oldest: u64, latest: u64, is_empty: bool) -> Vec<S
         .collect()
 }
 
-fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo, is_json: bool) -> anyhow::Result<()> {
+fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
+    let is_json = ctx.json().unwrap_or(false);
     let info = bucket.info;
     let total_blocks = bucket
         .entries
@@ -150,11 +150,8 @@ fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo, is_json: bool) -> anyh
     Ok(())
 }
 
-fn print_full_bucket(
-    ctx: &CliContext,
-    bucket: FullBucketInfo,
-    is_json: bool,
-) -> anyhow::Result<()> {
+fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
+    let is_json = ctx.json().unwrap_or(false);
     let settings = bucket.settings;
     let info = bucket.info;
     let total_blocks = bucket
