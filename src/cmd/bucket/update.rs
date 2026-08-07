@@ -23,7 +23,7 @@ pub(super) async fn update_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .unwrap()
         .clone()
         .pair()?;
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
     let bucket_settings = parse_bucket_settings(args);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;

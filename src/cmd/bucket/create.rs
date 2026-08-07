@@ -25,7 +25,7 @@ pub(super) async fn create_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .clone()
         .pair()?;
 
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
 
     let bucket_settings = parse_bucket_settings(args);
 

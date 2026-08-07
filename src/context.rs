@@ -46,8 +46,8 @@ impl CliContext {
         self.ca_cert.as_ref()
     }
 
-    pub(crate) fn json(&self) -> Option<bool> {
-        self.json
+    pub(crate) fn json(&self) -> bool {
+        self.json.unwrap_or(false)
     }
 }
 

@@ -98,7 +98,7 @@ fn record_range_cells_compact(oldest: u64, latest: u64, is_empty: bool) -> Vec<S
 }
 
 fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
     let info = bucket.info;
     let total_blocks = bucket
         .entries
@@ -151,7 +151,7 @@ fn print_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> 
 }
 
 fn print_full_bucket(ctx: &CliContext, bucket: FullBucketInfo) -> anyhow::Result<()> {
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
     let settings = bucket.settings;
     let info = bucket.info;
     let total_blocks = bucket

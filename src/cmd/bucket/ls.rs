@@ -49,7 +49,7 @@ pub(super) async fn ls_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
 }
 
 fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
 
     if is_json {
         let buckets = bucket_list
@@ -99,7 +99,7 @@ fn record_range_values(oldest: u64, latest: u64, is_empty: bool) -> (String, Str
 }
 
 fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
 
     if bucket_list.buckets.is_empty() {
         if is_json {

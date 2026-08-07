@@ -37,7 +37,7 @@ pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .pair()?;
     let new_name = args.get_one::<String>("NEW_NAME").unwrap();
     let entry_name = args.get_one::<String>("only-entry");
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     if let Some(entry_name) = entry_name {

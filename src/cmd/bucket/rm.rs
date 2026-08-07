@@ -67,7 +67,7 @@ async fn remove_entire_bucket(
     bucket_name: &String,
 ) -> anyhow::Result<()> {
     let yes = args.get_flag("yes");
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
     let confirm = if !yes {
         let confirm = dialoguer::Confirm::new()
             .default(false)
@@ -109,7 +109,7 @@ async fn remove_entries(
 ) -> anyhow::Result<()> {
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     let bucket = client.get_bucket(&bucket_name).await?;
-    let is_json = ctx.json().unwrap_or(false);
+    let is_json = ctx.json();
 
     let entries = fetch_and_filter_entries(&bucket, &only_entries)
         .await?
