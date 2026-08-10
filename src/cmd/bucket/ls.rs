@@ -12,7 +12,6 @@ use bytesize::ByteSize;
 use clap::ArgAction::SetTrue;
 use clap::{Arg, ArgMatches, Command};
 use reduct_rs::BucketInfoList;
-use serde::{Deserialize, Serialize};
 use tabled::settings::Style;
 use tabled::{Table, Tabled};
 
@@ -65,7 +64,7 @@ fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
     }
 }
 
-#[derive(Deserialize, Serialize, Tabled)]
+#[derive(Tabled)]
 struct BucketRow {
     #[tabled(rename = "Name")]
     name: String,
@@ -108,6 +107,7 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
         return;
     }
 
+    let bucket_list2 = bucket_list.clone();
     let rows = bucket_list
         .buckets
         .into_iter()
@@ -121,19 +121,11 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
                 name: bucket.name,
                 entries: bucket.entry_count,
                 size: ByteSize(bucket.size).display().si().to_string(),
-                status: if is_json {
-                    format!("{:?}", &bucket.status)
+                status: print_bucket_status(&bucket.status),
+                provisioned: if bucket.is_provisioned {
+                    "✓".to_string()
                 } else {
-                    print_bucket_status(&bucket.status)
-                },
-                provisioned: if is_json {
-                    bucket.is_provisioned.to_string()
-                } else {
-                    if bucket.is_provisioned {
-                        "✓".to_string()
-                    } else {
-                        "-".to_string()
-                    }
+                    "-".to_string()
                 },
                 oldest_record,
                 latest_record,
@@ -142,7 +134,7 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
         .collect::<Vec<_>>();
 
     if is_json {
-        output!(ctx, "{}", serde_json::to_string(&rows).unwrap());
+        output!(ctx, "{}", serde_json::to_string(&bucket_list2).unwrap());
         return;
     }
     let table = Table::new(rows).with(Style::markdown()).to_string();
@@ -272,10 +264,10 @@ mod tests {
         // List buckets
         ls_bucket(&ctx, &args).await.unwrap();
 
-        let rows: Vec<BucketRow> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+        let rows: BucketInfoList = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert!(rows.iter().any(|row| row.name == bucket));
-        assert!(rows.iter().any(|row| row.name == bucket2));
+        assert!(rows.buckets.iter().any(|row| row.name == bucket));
+        assert!(rows.buckets.iter().any(|row| row.name == bucket2));
     }
 
     #[rstest]
@@ -299,10 +291,10 @@ mod tests {
         // List buckets
         ls_bucket(&ctx, &args).await.unwrap();
 
-        let rows: Vec<BucketRow> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+        let rows: BucketInfoList = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert_eq!(rows.iter().any(|row| row.name == bucket), false);
-        assert_eq!(rows.iter().any(|row| row.name == bucket2), false);
+        assert_eq!(rows.buckets.iter().any(|row| row.name == bucket), false);
+        assert_eq!(rows.buckets.iter().any(|row| row.name == bucket2), false);
     }
 
     #[rstest]
