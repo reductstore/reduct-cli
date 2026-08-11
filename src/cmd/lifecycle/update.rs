@@ -56,6 +56,13 @@ pub(super) fn update_lifecycle_cmd() -> Command {
                 .help("Interval between lifecycle runs (e.g. 10m, 1h)")
                 .required(false),
         )
+        .arg(
+            Arg::new("processing-interval")
+                .long("processing-interval")
+                .value_name("DURATION")
+                .help("Interval for processing lifecycle records (e.g. 6h, 12h, 1d)")
+                .required(false),
+        )
         .arg(make_entries_arg())
         .arg(make_when_arg())
 }
@@ -84,6 +91,9 @@ pub(super) async fn update_lifecycle_handler(
     }
     if let Some(interval) = args.get_one::<String>("interval") {
         settings.interval = interval.to_string();
+    }
+    if let Some(processing_interval) = args.get_one::<String>("processing-interval") {
+        settings.processing_interval = Some(processing_interval.to_string());
     }
     if let Some(entries) = args.get_many::<String>("entries") {
         settings.entries = entries.map(|s| s.to_string()).collect();
@@ -126,6 +136,8 @@ mod tests {
             "2h",
             "--interval",
             "30m",
+            "--processing-interval",
+            "12h",
             "--entries",
             "entry1",
             "entry2",
@@ -139,10 +151,52 @@ mod tests {
         assert_eq!(lifecycle.settings.bucket, bucket2);
         assert_eq!(lifecycle.settings.older_than, "2h");
         assert_eq!(lifecycle.settings.interval, "30m");
+        assert_eq!(
+            lifecycle.settings.processing_interval.as_deref(),
+            Some("12h")
+        );
         assert_eq!(lifecycle.settings.entries, vec!["entry1", "entry2"]);
         assert_eq!(
             lifecycle.settings.when.unwrap(),
             json!({"&label": {"$eq": 1}})
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_lifecycle_preserves_processing_interval(
+        context: crate::context::CliContext,
+    ) {
+        let test_lifecycle = unique_name("test-lifecycle");
+        let bucket = unique_name("test-bucket");
+        let client = prepare_lifecycle(&context, &test_lifecycle, &bucket)
+            .await
+            .unwrap();
+
+        let mut settings = client
+            .get_lifecycle(&test_lifecycle)
+            .await
+            .unwrap()
+            .settings;
+        settings.processing_interval = Some("6h".to_string());
+        client
+            .update_lifecycle(&test_lifecycle, settings)
+            .await
+            .unwrap();
+
+        let args = update_lifecycle_cmd().get_matches_from(vec![
+            "update",
+            format!("local/{}", test_lifecycle).as_str(),
+            "--older-than",
+            "2h",
+        ]);
+        update_lifecycle_handler(&context, &args).await.unwrap();
+
+        let lifecycle = client.get_lifecycle(&test_lifecycle).await.unwrap();
+        assert_eq!(lifecycle.settings.older_than, "2h");
+        assert_eq!(
+            lifecycle.settings.processing_interval.as_deref(),
+            Some("6h")
         );
     }
 
