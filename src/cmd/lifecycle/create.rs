@@ -55,6 +55,13 @@ pub(super) fn create_lifecycle_cmd() -> Command {
                 .help("Interval between lifecycle runs (e.g. 10m, 1h)")
                 .required(false),
         )
+        .arg(
+            Arg::new("processing-interval")
+                .long("processing-interval")
+                .value_name("DURATION")
+                .help("Interval for processing lifecycle records (e.g. 6h, 12h, 1d)")
+                .required(false),
+        )
         .arg(make_entries_arg())
         .arg(make_when_arg())
 }
@@ -72,6 +79,7 @@ pub(super) async fn create_lifecycle(
     let lifecycle_type = *args.get_one::<LifecycleType>("type").unwrap();
     let older_than = args.get_one::<String>("older-than").unwrap();
     let interval = args.get_one::<String>("interval");
+    let processing_interval = args.get_one::<String>("processing-interval");
     let entries = args
         .get_many::<String>("entries")
         .unwrap_or_default()
@@ -88,6 +96,9 @@ pub(super) async fn create_lifecycle(
     settings.entries = entries;
     if let Some(interval) = interval {
         settings.interval = interval.to_string();
+    }
+    if let Some(processing_interval) = processing_interval {
+        settings.processing_interval = Some(processing_interval.to_string());
     }
     if let Some(when) = when {
         settings.when = Some(serde_json::from_str(when)?);
@@ -126,6 +137,8 @@ mod tests {
             "1h",
             "--interval",
             "10m",
+            "--processing-interval",
+            "6h",
             "--entries",
             "entry1",
             "entry2",
@@ -139,6 +152,10 @@ mod tests {
         assert_eq!(lifecycle.settings.bucket, bucket);
         assert_eq!(lifecycle.settings.older_than, "1h");
         assert_eq!(lifecycle.settings.interval, "10m");
+        assert_eq!(
+            lifecycle.settings.processing_interval.as_deref(),
+            Some("6h")
+        );
         assert_eq!(lifecycle.settings.entries, vec!["entry1", "entry2"]);
         assert_eq!(
             lifecycle.settings.when.unwrap(),
@@ -166,6 +183,7 @@ mod tests {
 
         let lifecycle = client.get_lifecycle(&test_lifecycle).await.unwrap();
         assert_eq!(lifecycle.settings.interval, "3600s");
+        assert_eq!(lifecycle.settings.processing_interval, None);
     }
 
     #[rstest]

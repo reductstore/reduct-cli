@@ -1,2 +1,7 @@
 target
 .idea
+.kilo/
+!.kilo/
+.kilo/*
+!.kilo/skills/
+!.kilo/skills/**

@@ -58,6 +58,14 @@ pub(super) async fn show_lifecycle_handler(
         labeled_cell("Bucket", lifecycle.settings.bucket.clone()),
         labeled_cell("Older Than", lifecycle.settings.older_than.clone()),
         labeled_cell("Interval", lifecycle.settings.interval.clone()),
+        labeled_cell(
+            "Processing Interval",
+            lifecycle
+                .settings
+                .processing_interval
+                .clone()
+                .unwrap_or_else(|| "None".to_string()),
+        ),
         labeled_cell("Entries", format!("{:?}", lifecycle.settings.entries)),
     ];
 
@@ -107,7 +115,30 @@ mod tests {
         assert!(output[0].contains("Type: Delete"));
         assert!(output[0].contains("Older Than: 1h"));
         assert!(output[0].contains("Interval: 10m"));
+        assert!(output[0].contains("Processing Interval: None"));
         assert!(output[0].contains("When: None"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_show_lifecycle_with_processing_interval(context: CliContext) {
+        let lifecycle = unique_name("test-lifecycle");
+        let bucket = unique_name("test-bucket");
+        let client = prepare_lifecycle(&context, &lifecycle, &bucket)
+            .await
+            .unwrap();
+
+        let mut settings = client.get_lifecycle(&lifecycle).await.unwrap().settings;
+        settings.processing_interval = Some("1d".to_string());
+        client.update_lifecycle(&lifecycle, settings).await.unwrap();
+
+        let args = show_lifecycle_cmd()
+            .get_matches_from(vec!["show", format!("local/{}", lifecycle).as_str()]);
+        show_lifecycle_handler(&context, &args).await.unwrap();
+
+        let output = context.stdout().history();
+        assert_eq!(output.len(), 1);
+        assert!(output[0].contains("Processing Interval: 1d"));
     }
 
     #[rstest]
