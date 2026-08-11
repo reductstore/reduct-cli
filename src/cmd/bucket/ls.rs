@@ -98,16 +98,15 @@ fn record_range_values(oldest: u64, latest: u64, is_empty: bool) -> (String, Str
 }
 
 fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
-    let is_json = ctx.json();
-
-    if bucket_list.buckets.is_empty() {
-        if is_json {
-            output!(ctx, "{}", "[]");
-        }
+    if ctx.json() {
+        output!(ctx, "{}", serde_json::to_string(&bucket_list).unwrap());
         return;
     }
 
-    let bucket_list2 = bucket_list.clone();
+    if bucket_list.buckets.is_empty() {
+        return;
+    }
+
     let rows = bucket_list
         .buckets
         .into_iter()
@@ -133,10 +132,6 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
         })
         .collect::<Vec<_>>();
 
-    if is_json {
-        output!(ctx, "{}", serde_json::to_string(&bucket_list2).unwrap());
-        return;
-    }
     let table = Table::new(rows).with(Style::markdown()).to_string();
     output!(ctx, "{}", table);
 }
