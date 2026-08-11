@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add compression option to replica create, update, and show commands, [PR-261](https://github.com/reductstore/reduct-cli/pull/261) by @vbmade2000
 - Improve time parsing for --start and --stop options, [PR-226](https://github.com/reductstore/reduct-cli/pull/226) by @yaslam-dev
 - Added `write` command to write a single record to a bucket, [PR-275](https://github.com/reductstore/reduct-cli/pull/275) by @vbmade2000
+- Add `--json` flag to `bucket ls`, `bucket show`, `bucket create`, `bucket update`, `bucket rename` and `bucket rm` command, [PR-274](https://github.com/reductstore/reduct-cli/pull/274) by @vbmade2000
 
 ### Changed
 

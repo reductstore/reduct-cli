@@ -23,6 +23,7 @@ pub(super) async fn update_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .unwrap()
         .clone()
         .pair()?;
+    let is_json = ctx.json();
     let bucket_settings = parse_bucket_settings(args);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
@@ -32,14 +33,21 @@ pub(super) async fn update_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .set_settings(bucket_settings)
         .await?;
 
-    output!(ctx, "Bucket '{}' updated", bucket_name);
+    if !is_json {
+        output!(ctx, "Bucket '{}' updated", bucket_name);
+    } else {
+        output!(ctx, "{}", "{}");
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::QuotaType;
     use rstest::*;
 
@@ -154,5 +162,36 @@ mod tests {
             "error: invalid value 'INVALID' for '--block-records <NUMBER>': invalid digit found in string\n\nFor more information, try '--help'.\n",
             "Failed because of invalid block records"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_update_bucket_json(context: CliContext, #[future] bucket: String) {
+        let bucket_name = bucket.await;
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket_name).send().await.unwrap();
+
+        let args = update_bucket_cmd().get_matches_from(vec![
+            "update",
+            format!("local/{}", bucket_name).as_str(),
+            "--quota-type",
+            "FIFO",
+            "--quota-size",
+            "1GB",
+            "--block-size",
+            "32MB",
+            "--block-records",
+            "100",
+        ]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        update_bucket(&ctx, &args).await.unwrap();
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }

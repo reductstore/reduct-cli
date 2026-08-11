@@ -37,12 +37,17 @@ pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .pair()?;
     let new_name = args.get_one::<String>("NEW_NAME").unwrap();
     let entry_name = args.get_one::<String>("only-entry");
+    let is_json = ctx.json();
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
     if let Some(entry_name) = entry_name {
         let bucket = client.get_bucket(&bucket_name).await?;
         bucket.rename_entry(entry_name, new_name).await?;
-        output!(ctx, "Entry '{}' renamed to '{}'", entry_name, new_name);
+        if !is_json {
+            output!(ctx, "Entry '{}' renamed to '{}'", entry_name, new_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     } else {
         client
             .get_bucket(&bucket_name)
@@ -50,7 +55,11 @@ pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
             .rename(new_name)
             .await?;
 
-        output!(ctx, "Bucket '{}' renamed to '{}'", bucket_name, new_name);
+        if !is_json {
+            output!(ctx, "Bucket '{}' renamed to '{}'", bucket_name, new_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     }
 
     Ok(())
@@ -59,7 +68,10 @@ pub(super) async fn rename_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use rstest::*;
 
     #[rstest]
@@ -165,5 +177,41 @@ mod tests {
             args.err().unwrap().to_string(),
             "error: invalid value 'local' for '<BUCKET_PATH>'\n\nFor more information, try '--help'.\n"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rename_bucket_json(context: CliContext, #[future] bucket: String) {
+        let bucket_name = bucket.await;
+        let client = build_client(&context, "local").await.unwrap();
+        client.create_bucket(&bucket_name).send().await.unwrap();
+
+        let args = rename_bucket_cmd().get_matches_from(vec![
+            "rename",
+            format!("local/{}", bucket_name).as_str(),
+            "new_renamed_bucket",
+        ]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        rename_bucket(&ctx, &args).await.unwrap();
+
+        assert_eq!(
+            ctx.stdout().history().len(),
+            1,
+            "JSON output contains one line"
+        );
+        assert_eq!(
+            ctx.stdout().history()[0],
+            "{}".to_string(),
+            "JSON output is empty - {{}}"
+        );
+
+        let bucket = client.get_bucket("new_renamed_bucket").await.unwrap();
+        bucket.remove().await.unwrap();
     }
 }

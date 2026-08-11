@@ -24,23 +24,36 @@ pub(super) async fn create_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow
         .unwrap()
         .clone()
         .pair()?;
+
+    let is_json = ctx.json();
+
     let bucket_settings = parse_bucket_settings(args);
 
     let client: ReductClient = build_client(ctx, &alias_or_url).await?;
+
     client
         .create_bucket(&bucket_name)
         .settings(bucket_settings)
         .send()
         .await?;
 
-    output!(ctx, "Bucket '{}' created", bucket_name);
+    if !is_json {
+        output!(ctx, "Bucket '{}' created", bucket_name);
+    } else {
+        output!(ctx, "{}", "{}");
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::QuotaType;
     use rstest::*;
 
@@ -155,5 +168,22 @@ mod tests {
             "error: invalid value 'INVALID' for '--block-records <NUMBER>': invalid digit found in string\n\nFor more information, try '--help'.\n",
             "Failed because of invalid block records"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_bucket_successfully_json(context: CliContext, #[future] bucket: String) {
+        let args = create_bucket_cmd()
+            .get_matches_from(vec!["create", format!("local/{}", bucket.await).as_str()]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        create_bucket(&ctx, &args).await.unwrap();
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }

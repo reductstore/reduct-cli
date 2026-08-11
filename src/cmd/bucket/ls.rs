@@ -35,6 +35,7 @@ pub(super) fn ls_bucket_cmd() -> Command {
 
 pub(super) async fn ls_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<()> {
     let alias_or_url = args.get_one::<String>("ALIAS_OR_URL").unwrap();
+
     let client = build_client(ctx, alias_or_url).await?;
 
     let bucket_list = client.bucket_list().await?;
@@ -47,6 +48,17 @@ pub(super) async fn ls_bucket(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
 }
 
 fn print_list(ctx: &CliContext, bucket_list: BucketInfoList) {
+    let is_json = ctx.json();
+
+    if is_json {
+        let buckets = bucket_list
+            .buckets
+            .iter()
+            .map(|bucket| bucket.name.as_str())
+            .collect::<Vec<_>>();
+        output!(ctx, "{}", serde_json::to_string(&buckets).unwrap());
+        return;
+    }
     for bucket in bucket_list.buckets {
         output!(ctx, "{}", bucket.name);
     }
@@ -86,10 +98,16 @@ fn record_range_values(oldest: u64, latest: u64, is_empty: bool) -> (String, Str
 }
 
 fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
+    let is_json = ctx.json();
+
     if bucket_list.buckets.is_empty() {
+        if is_json {
+            output!(ctx, "{}", "[]");
+        }
         return;
     }
 
+    let bucket_list2 = bucket_list.clone();
     let rows = bucket_list
         .buckets
         .into_iter()
@@ -115,14 +133,23 @@ fn print_full_list(ctx: &CliContext, bucket_list: BucketInfoList) {
         })
         .collect::<Vec<_>>();
 
+    if is_json {
+        output!(ctx, "{}", serde_json::to_string(&bucket_list2).unwrap());
+        return;
+    }
     let table = Table::new(rows).with(Style::markdown()).to_string();
     output!(ctx, "{}", table);
 }
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
-    use crate::context::tests::{bucket, bucket2, context};
+    use crate::context::{
+        tests::{bucket, bucket2, context, MockOutput},
+        ContextBuilder,
+    };
+    use reduct_rs::{Bucket, ReductClient};
     use rstest::rstest;
 
     #[rstest]
@@ -209,5 +236,133 @@ mod tests {
                 ],
             ]
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_bucket_full_json_with_buckets(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+    ) {
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let args = ls_bucket_cmd().get_matches_from(vec!["ls", "local", "--full"]);
+        let client = build_client(&ctx, "local").await.unwrap();
+
+        // Create buckets
+        let _ = create_test_bucket_with_entry(&bucket, &client).await;
+        let _ = create_test_bucket_with_entry(&bucket2, &client).await;
+
+        // List buckets
+        ls_bucket(&ctx, &args).await.unwrap();
+
+        let rows: BucketInfoList = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(rows.buckets.iter().any(|row| row.name == bucket));
+        assert!(rows.buckets.iter().any(|row| row.name == bucket2));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_bucket_full_json_with_no_bucket(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+    ) {
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let args = ls_bucket_cmd().get_matches_from(vec!["ls", "local", "--full"]);
+
+        // List buckets
+        ls_bucket(&ctx, &args).await.unwrap();
+
+        let rows: BucketInfoList = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert_eq!(rows.buckets.iter().any(|row| row.name == bucket), false);
+        assert_eq!(rows.buckets.iter().any(|row| row.name == bucket2), false);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_bucket_json_with_buckets(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+    ) {
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let args = ls_bucket_cmd().get_matches_from(vec!["ls", "local"]);
+        let client = build_client(&ctx, "local").await.unwrap();
+
+        // Create buckets
+        let bucket = create_test_bucket_with_entry(&bucket.await, &client).await;
+        let bucket2 = create_test_bucket_with_entry(&bucket2.await, &client).await;
+
+        // List buckets
+        ls_bucket(&ctx, &args).await.unwrap();
+
+        let rows: Vec<String> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(rows.contains(&bucket.name().to_string()));
+        assert!(rows.contains(&bucket2.name().to_string()));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_bucket_json_with_no_bucket(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket2: String,
+    ) {
+        let bucket = bucket.await;
+        let bucket2 = bucket2.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let args = ls_bucket_cmd().get_matches_from(vec!["ls", "local"]);
+
+        // List buckets
+        ls_bucket(&ctx, &args).await.unwrap();
+
+        // We have $system bucket to consider too so len is 1.
+        let rows: Vec<String> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert_eq!(rows.contains(&bucket), false);
+        assert_eq!(rows.contains(&bucket2), false);
+    }
+
+    async fn create_test_bucket_with_entry(bucket_name: &str, client: &ReductClient) -> Bucket {
+        let bucket = client.create_bucket(bucket_name).send().await.unwrap();
+        bucket
+            .write_record("test")
+            .data("data")
+            .timestamp_us(0)
+            .send()
+            .await
+            .unwrap();
+        bucket
     }
 }
