@@ -21,6 +21,7 @@ use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reduct_rs::{Bucket, EntryInfo};
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -72,6 +73,7 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
     if let Some(entry_path) = entry_path {
         query_params.entry_filter.push(entry_path);
     }
+    let is_json = ctx.json();
     let timestamps = args
         .get_many::<String>("time")
         .map(|values| values.map(|s| s.clone()).collect::<Vec<String>>());
@@ -85,6 +87,7 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
     let remover = build_remover(query_params, timestamps, bucket);
+    let mut json_output = json!({});
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
@@ -93,37 +96,69 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
         let spinner = progress.add(ProgressBar::new_spinner());
         let entry_name = entry.name.clone();
         tasks.spawn(async move {
-            spinner.enable_steady_tick(Duration::from_millis(120));
-            spinner.set_style(
-                ProgressStyle::with_template("[{elapsed_precise}] {spinner:.green} {msg}")
-                    .unwrap()
-                    // For more spinners check out the cli-spinners project:
-                    // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-                    .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
-            );
-            spinner.set_message(format!("Removing records from '{}'", entry_name));
+            if !is_json {
+                spinner.enable_steady_tick(Duration::from_millis(120));
+                spinner.set_style(
+                    ProgressStyle::with_template("[{elapsed_precise}] {spinner:.green} {msg}")
+                        .unwrap()
+                        // For more spinners check out the cli-spinners project:
+                        // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
+                        .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
+                );
+                spinner.set_message(format!("Removing records from '{}'", entry_name));
+            }
 
             let _permit = local_sem.acquire().await.unwrap();
-            match local_remover.remove_records(entry).await {
-                Ok(removed_records) => {
-                    spinner.finish_with_message(format!(
-                        "Removed {} records from '{}'",
-                        removed_records, entry_name
-                    ));
-                }
-                Err(err) => {
-                    spinner.finish_with_message(format!(
-                        "Failed to remove records from '{}': {}",
-                        entry_name, err
-                    ));
-                }
-            }
+            let (entry_name, records_removed, status, error) =
+                match local_remover.remove_records(entry).await {
+                    Ok(removed_records) => {
+                        if !is_json {
+                            spinner.finish_with_message(format!(
+                                "Removed {} records from '{}'",
+                                removed_records, entry_name
+                            ));
+                        }
+                        (entry_name, removed_records, 0, "".to_string())
+                    }
+                    Err(err) => {
+                        if !is_json {
+                            spinner.finish_with_message(format!(
+                                "Failed to remove records from '{}': {}",
+                                entry_name, err
+                            ));
+                        }
+                        let (status, error) = if let Some(reduct_err) =
+                            err.downcast_ref::<reduct_rs::ReductError>()
+                        {
+                            (reduct_err.status() as i32, reduct_err.message().to_string())
+                        } else {
+                            // If not a ReductError, use 1 as unknown status
+                            (1, err.to_string())
+                        };
+                        (entry_name, 0 as u64, status, error.to_string())
+                    }
+                };
+
+            (entry_name, records_removed, status, error)
         });
     }
 
+    let obj = json_output.as_object_mut().unwrap();
+
     while let Some(result) = tasks.join_next().await {
-        let _ = result?;
+        let task_result = result?;
+        let entry_json = json!({
+            "records_removed": task_result.1,
+            "status_code": task_result.2,
+            "error_message": task_result.3
+        });
+        obj.insert(task_result.0, entry_json);
     }
+
+    if is_json {
+        println!("{}", serde_json::to_string(&json_output)?);
+    }
+
     Ok(())
 }
 
