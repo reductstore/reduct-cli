@@ -11,6 +11,7 @@ use crate::cmd::rm::query_remover::QueryRemover;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
+use crate::io::std::output;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_strict_arg, make_when_arg,
 };
@@ -87,7 +88,7 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
     let remover = build_remover(query_params, timestamps, bucket);
-    let mut json_output = json!({});
+    let mut entry_json_objs = Vec::new();
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
@@ -143,20 +144,19 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
         });
     }
 
-    let obj = json_output.as_object_mut().unwrap();
-
     while let Some(result) = tasks.join_next().await {
         let task_result = result?;
         let entry_json = json!({
+            "entry_name": task_result.0,
             "records_removed": task_result.1,
             "status_code": task_result.2,
             "error_message": task_result.3
         });
-        obj.insert(task_result.0, entry_json);
+        entry_json_objs.push(entry_json)
     }
 
     if is_json {
-        println!("{}", serde_json::to_string(&json_output)?);
+        output!(ctx, "{}", serde_json::to_string(&entry_json_objs)?);
     }
 
     Ok(())
@@ -186,7 +186,10 @@ fn build_remover(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::ErrorCode;
     use rstest::*;
 
@@ -296,5 +299,40 @@ mod tests {
             .await
             .unwrap();
         bucket
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_json_output(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket_with_record: Bucket,
+    ) {
+        let args = rm_cmd().get_matches_from(vec!["rm", &format!("local/{}", bucket.await)]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let _ = bucket_with_record.await;
+
+        rm_handler(&ctx, &args).await.unwrap();
+
+        let entries_json: serde_json::Value =
+            serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+        let entries = entries_json.as_array().unwrap();
+
+        assert_eq!(entries.len(), 2);
+        for entry in entries {
+            assert!(entry["entry_name"]
+                .as_str()
+                .iter()
+                .any(|e| *e == "entry-1" || *e == "entry-2"));
+            assert_eq!(entry["records_removed"], 1);
+            assert_eq!(entry["status_code"], 0);
+            assert_eq!(entry["error_message"], "");
+        }
     }
 }
