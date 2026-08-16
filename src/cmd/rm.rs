@@ -11,6 +11,7 @@ use crate::cmd::rm::query_remover::QueryRemover;
 use crate::cmd::ALIAS_OR_URL_HELP;
 use crate::context::CliContext;
 use crate::io::reduct::build_client;
+use crate::io::std::output;
 use crate::parse::widely_used_args::{
     make_each_n, make_each_s, make_entries_arg, make_strict_arg, make_when_arg,
 };
@@ -21,6 +22,7 @@ use async_trait::async_trait;
 use clap::{Arg, Command};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use reduct_rs::{Bucket, EntryInfo};
+use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -72,6 +74,7 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
     if let Some(entry_path) = entry_path {
         query_params.entry_filter.push(entry_path);
     }
+    let is_json = ctx.json();
     let timestamps = args
         .get_many::<String>("time")
         .map(|values| values.map(|s| s.clone()).collect::<Vec<String>>());
@@ -85,6 +88,7 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
 
     let semaphore = Arc::new(tokio::sync::Semaphore::new(query_params.parallel));
     let remover = build_remover(query_params, timestamps, bucket);
+    let mut entry_json_objs = Vec::new();
 
     for entry in entries {
         let local_sem = Arc::clone(&semaphore);
@@ -93,37 +97,68 @@ pub(crate) async fn rm_handler(ctx: &CliContext, args: &clap::ArgMatches) -> any
         let spinner = progress.add(ProgressBar::new_spinner());
         let entry_name = entry.name.clone();
         tasks.spawn(async move {
-            spinner.enable_steady_tick(Duration::from_millis(120));
-            spinner.set_style(
-                ProgressStyle::with_template("[{elapsed_precise}] {spinner:.green} {msg}")
-                    .unwrap()
-                    // For more spinners check out the cli-spinners project:
-                    // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
-                    .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
-            );
-            spinner.set_message(format!("Removing records from '{}'", entry_name));
+            if !is_json {
+                spinner.enable_steady_tick(Duration::from_millis(120));
+                spinner.set_style(
+                    ProgressStyle::with_template("[{elapsed_precise}] {spinner:.green} {msg}")
+                        .unwrap()
+                        // For more spinners check out the cli-spinners project:
+                        // https://github.com/sindresorhus/cli-spinners/blob/master/spinners.json
+                        .tick_strings(&["▁", "▃", "▄", "▅", "▆", "▇"]),
+                );
+                spinner.set_message(format!("Removing records from '{}'", entry_name));
+            }
 
             let _permit = local_sem.acquire().await.unwrap();
-            match local_remover.remove_records(entry).await {
-                Ok(removed_records) => {
-                    spinner.finish_with_message(format!(
-                        "Removed {} records from '{}'",
-                        removed_records, entry_name
-                    ));
-                }
-                Err(err) => {
-                    spinner.finish_with_message(format!(
-                        "Failed to remove records from '{}': {}",
-                        entry_name, err
-                    ));
-                }
-            }
+            let (entry_name, records_removed, status, error) =
+                match local_remover.remove_records(entry).await {
+                    Ok(removed_records) => {
+                        if !is_json {
+                            spinner.finish_with_message(format!(
+                                "Removed {} records from '{}'",
+                                removed_records, entry_name
+                            ));
+                        }
+                        (entry_name, removed_records, 0, "".to_string())
+                    }
+                    Err(err) => {
+                        if !is_json {
+                            spinner.finish_with_message(format!(
+                                "Failed to remove records from '{}': {}",
+                                entry_name, err
+                            ));
+                        }
+                        let (status, error) = if let Some(reduct_err) =
+                            err.downcast_ref::<reduct_rs::ReductError>()
+                        {
+                            (reduct_err.status() as i32, reduct_err.message().to_string())
+                        } else {
+                            // If not a ReductError, use 1 as unknown status
+                            (1, err.to_string())
+                        };
+                        (entry_name, 0 as u64, status, error.to_string())
+                    }
+                };
+
+            (entry_name, records_removed, status, error)
         });
     }
 
     while let Some(result) = tasks.join_next().await {
-        let _ = result?;
+        let task_result = result?;
+        let entry_json = json!({
+            "entry_name": task_result.0,
+            "records_removed": task_result.1,
+            "status_code": task_result.2,
+            "error_message": task_result.3
+        });
+        entry_json_objs.push(entry_json)
     }
+
+    if is_json {
+        output!(ctx, "{}", serde_json::to_string(&entry_json_objs)?);
+    }
+
     Ok(())
 }
 
@@ -151,7 +186,10 @@ fn build_remover(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{bucket, context};
+    use crate::context::{
+        tests::{bucket, context, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::ErrorCode;
     use rstest::*;
 
@@ -261,5 +299,40 @@ mod tests {
             .await
             .unwrap();
         bucket
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_json_output(
+        context: CliContext,
+        #[future] bucket: String,
+        #[future] bucket_with_record: Bucket,
+    ) {
+        let args = rm_cmd().get_matches_from(vec!["rm", &format!("local/{}", bucket.await)]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let _ = bucket_with_record.await;
+
+        rm_handler(&ctx, &args).await.unwrap();
+
+        let entries_json: serde_json::Value =
+            serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+        let entries = entries_json.as_array().unwrap();
+
+        assert_eq!(entries.len(), 2);
+        for entry in entries {
+            assert!(entry["entry_name"]
+                .as_str()
+                .iter()
+                .any(|e| *e == "entry-1" || *e == "entry-2"));
+            assert_eq!(entry["records_removed"], 1);
+            assert_eq!(entry["status_code"], 0);
+            assert_eq!(entry["error_message"], "");
+        }
     }
 }
