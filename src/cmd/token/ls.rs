@@ -232,6 +232,7 @@ mod tests {
                 assert_eq!(token.ip_allowlist, Vec::<String>::new());
                 assert!(token.created_at.to_string().len() > 1);
                 assert_eq!(token.expires_at, None);
+                break;
             }
         }
     }
