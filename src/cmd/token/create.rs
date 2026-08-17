@@ -118,6 +118,7 @@ pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
         .unwrap()
         .clone()
         .pair()?;
+    let is_json = ctx.json();
     let full_access = args.get_flag("full-access");
     let read_buckets = args
         .get_many::<String>("read-bucket")
@@ -187,14 +188,22 @@ pub(super) async fn create_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
 
     let token = create_token.send().await?;
 
-    output!(ctx, "Token '{}' created: {}", token_name, token.value);
+    if !is_json {
+        output!(ctx, "Token '{}' created: {}", token_name, token.value);
+    } else {
+        output!(ctx, "{}", "{}");
+    }
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{context, token};
+    use crate::context::{
+        tests::{context, token, MockOutput},
+        ContextBuilder,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -309,5 +318,35 @@ mod tests {
         assert!(err
             .to_string()
             .contains("cannot be used with '--expires-in <DURATION>'"));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_create_token_json(context: CliContext, #[future] token: String) {
+        let args = create_token_cmd()
+            .try_get_matches_from(vec![
+                "create",
+                format!("local/{}", token.await).as_str(),
+                "--full-access",
+                "--ttl",
+                "60s",
+                "--ip-allow",
+                "127.0.0.1",
+                "--read-bucket",
+                "test",
+                "--write-bucket",
+                "test",
+            ])
+            .unwrap();
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        create_token(&ctx, &args).await.unwrap();
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }
