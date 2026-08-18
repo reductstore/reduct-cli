@@ -22,22 +22,34 @@ pub(super) async fn get_server_license(
     args: &ArgMatches,
 ) -> anyhow::Result<()> {
     let alias = args.get_one::<String>("ALIAS_OR_URL").unwrap();
+    let is_json = ctx.json();
 
     let client = crate::io::reduct::build_client(ctx, alias).await?;
 
     if let Some(license) = client.server_info().await?.license {
-        output!(ctx, "Licensee:\t{}", license.licensee);
-        output!(ctx, "Invoice:\t{}", license.invoice);
-        output!(ctx, "Expiry Date:\t{}", license.expiry_date);
-        output!(ctx, "Plan:\t\t{}", license.plan);
-        output!(ctx, "Num. Devices:\t{}", license.device_number);
-        output!(ctx, "Disk Quota:\t{} TB", license.disk_quota);
-        output!(ctx, "Fingerprint:\t{}", license.fingerprint);
+        if is_json {
+            output!(ctx, "{}", serde_json::to_string(&license).unwrap());
+        } else {
+            output!(ctx, "Licensee:\t{}", license.licensee);
+            output!(ctx, "Invoice:\t{}", license.invoice);
+            output!(ctx, "Expiry Date:\t{}", license.expiry_date);
+            output!(ctx, "Plan:\t\t{}", license.plan);
+            output!(ctx, "Num. Devices:\t{}", license.device_number);
+            output!(ctx, "Disk Quota:\t{} TB", license.disk_quota);
+            output!(ctx, "Fingerprint:\t{}", license.fingerprint);
+        }
     } else {
-        output!(
+        if is_json {
+            let license_json = serde_json::json!({
+                "license": "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
+            });
+            output!(ctx, "{}", serde_json::to_string(&license_json).unwrap());
+        } else {
+            output!(
             ctx,
             "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
         );
+        }
     }
 
     Ok(())
@@ -46,7 +58,10 @@ pub(super) async fn get_server_license(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::context;
+    use crate::context::{
+        tests::{context, MockOutput},
+        ContextBuilder,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -56,5 +71,27 @@ mod tests {
         get_server_license(&context, &matches).await.unwrap();
 
         assert_eq!(context.stdout().history(), ["BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_server_license_json(context: crate::context::CliContext) {
+        let matches = server_license_cmd().get_matches_from(vec!["license", "local"]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        get_server_license(&ctx, &matches).await.unwrap();
+
+        let license_json: serde_json::Value =
+            serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert_eq!(
+            license_json["license"],
+            "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
+        );
     }
 }

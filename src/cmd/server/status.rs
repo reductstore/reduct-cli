@@ -106,11 +106,11 @@ mod tests {
         assert!(main_object.contains_key("latest_record"));
         assert!(main_object.contains_key("license"));
 
-        // Verify keys under default keys
+        // Verify "defaults" keys
         let default_object = main_object["defaults"].as_object().unwrap();
         assert!(default_object.contains_key("bucket"));
 
-        // Verify bucket key
+        // Verify "bucket" key
         let bucket_object = default_object["bucket"].as_object().unwrap();
         assert!(bucket_object.contains_key("quota_type"));
         assert!(bucket_object.contains_key("quota_size"));
