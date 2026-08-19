@@ -35,7 +35,7 @@ pub(super) async fn rotate_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
     if !is_json {
         output!(ctx, "Token '{}' rotated: {}", token_name, token.value);
     } else {
-        output!(ctx, "{}", "{}");
+        output!(ctx, "{}", serde_json::to_string(&token).unwrap());
     }
 
     Ok(())
@@ -106,6 +106,9 @@ mod tests {
             .get_matches_from(vec!["rotate", format!("local/{}", token).as_str()]);
         rotate_token(&ctx, &args).await.unwrap();
 
-        assert_eq!(ctx.stdout().history(), vec!["{}"]);
+        let json: serde_json::Value = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(json["value"].as_str().unwrap().len() > 1);
+        assert!(json["created_at"].as_str().unwrap().len() > 1);
     }
 }
