@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add lifecycle processing interval support to create, update, and show commands, [PR-276](https://github.com/reductstore/reduct-cli/pull/276) by @atimin
 - Add `--json` flag to `rm` command, [PR-277](https://github.com/reductstore/reduct-cli/pull/277) by @vbmade2000
 - Add `--json` flag to `token` command, [PR-283](https://github.com/reductstore/reduct-cli/pull/283) by @vbmade2000
+- Add `--json` flag to `server` command, [PR-284](https://github.com/reductstore/reduct-cli/pull/284) by @vbmade2000
 
 ### Changed
 
