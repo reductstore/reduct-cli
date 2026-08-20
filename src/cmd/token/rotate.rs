@@ -28,10 +28,15 @@ pub(super) async fn rotate_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
         .unwrap()
         .clone()
         .pair()?;
+    let is_json = ctx.json();
 
     let client = build_client(ctx, &alias_or_url).await?;
     let token = client.rotate_token(&token_name).await?;
-    output!(ctx, "Token '{}' rotated: {}", token_name, token.value);
+    if !is_json {
+        output!(ctx, "Token '{}' rotated: {}", token_name, token.value);
+    } else {
+        output!(ctx, "{}", serde_json::to_string(&token).unwrap());
+    }
 
     Ok(())
 }
@@ -39,7 +44,10 @@ pub(super) async fn rotate_token(ctx: &CliContext, args: &ArgMatches) -> anyhow:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{context, token};
+    use crate::context::{
+        tests::{context, token, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::{ErrorCode, Permissions};
     use rstest::*;
 
@@ -75,5 +83,32 @@ mod tests {
         let cmd = rotate_token_cmd();
         let args = cmd.try_get_matches_from(vec!["rotate", "test"]);
         assert_eq!(args.unwrap_err().to_string(), "error: invalid value 'test' for '<TOKEN_PATH>'\n\nFor more information, try '--help'.\n");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rotate_token_json(context: CliContext, #[future] token: String) {
+        let token = token.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let client = build_client(&ctx, "local").await.unwrap();
+        client
+            .create_token(&token, Permissions::default())
+            .await
+            .unwrap();
+
+        let args = rotate_token_cmd()
+            .get_matches_from(vec!["rotate", format!("local/{}", token).as_str()]);
+        rotate_token(&ctx, &args).await.unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(json["value"].as_str().unwrap().len() > 1);
+        assert!(json["created_at"].as_str().unwrap().len() > 1);
     }
 }

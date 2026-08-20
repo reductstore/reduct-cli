@@ -47,8 +47,14 @@ pub(super) async fn ls_tokens(ctx: &CliContext, args: &ArgMatches) -> anyhow::Re
 }
 
 fn print_list(ctx: &CliContext, token_list: Vec<Token>) {
-    for token in token_list {
-        output!(ctx, "{}", token.name);
+    let token_list: Vec<&str> = token_list.iter().map(|t| t.name.as_str()).collect();
+
+    if ctx.json() {
+        output!(ctx, "{}", serde_json::to_string(&token_list).unwrap());
+    } else {
+        for token in token_list {
+            output!(ctx, "{}", token);
+        }
     }
 }
 
@@ -107,6 +113,11 @@ fn print_full_list(ctx: &CliContext, token_list: Vec<Token>) {
         return;
     }
 
+    if ctx.json() {
+        output!(ctx, "{}", serde_json::to_string(&token_list).unwrap());
+        return;
+    }
+
     let table = Table::new(token_list.into_iter().map(TokenTable::from))
         .with(Style::markdown())
         .to_string();
@@ -116,7 +127,10 @@ fn print_full_list(ctx: &CliContext, token_list: Vec<Token>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{context, token};
+    use crate::context::{
+        tests::{context, token, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::Permissions;
     use rstest::*;
 
@@ -157,5 +171,69 @@ mod tests {
             .with(Style::markdown())
             .to_string();
         assert_eq!(context.stdout().history(), vec![expected]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_tokens_json(context: CliContext, #[future] token: String) {
+        let token = token.await;
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let client = build_client(&ctx, "local").await.unwrap();
+        client
+            .create_token(&token, Permissions::default())
+            .await
+            .unwrap();
+
+        let args = ls_tokens_cmd().get_matches_from(vec!["ls", "local"]);
+        ls_tokens(&ctx, &args).await.unwrap();
+
+        let tokens: Vec<String> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(tokens.contains(&"init-token".to_string()));
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ls_tokens_full_json(context: CliContext, #[future] token: String) {
+        let token = token.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let client = build_client(&ctx, "local").await.unwrap();
+        client
+            .create_token(&token, Permissions::default())
+            .await
+            .unwrap();
+        client.list_tokens().await.unwrap();
+
+        let args = ls_tokens_cmd().get_matches_from(vec!["ls", "local", "--full"]);
+        ls_tokens(&ctx, &args).await.unwrap();
+
+        let tokens: Vec<Token> = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert!(tokens.iter().any(|token| token.name == "init-token"));
+
+        for token in tokens {
+            if token.name == "init-token" {
+                assert_eq!(token.value, "");
+                assert_eq!(token.ttl, None);
+                assert_eq!(token.is_provisioned, true);
+                assert_eq!(token.is_expired, false);
+                assert_eq!(token.expires_at, None);
+                assert_eq!(token.ip_allowlist, Vec::<String>::new());
+                assert!(token.created_at.to_string().len() > 1);
+                assert_eq!(token.expires_at, None);
+                break;
+            }
+        }
     }
 }

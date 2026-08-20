@@ -38,6 +38,8 @@ pub(super) async fn rm_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Res
         .clone()
         .pair()?;
 
+    let is_json = ctx.json();
+
     let confirm = if !args.get_flag("yes") {
         let confirm = dialoguer::Confirm::new()
             .default(false)
@@ -54,9 +56,17 @@ pub(super) async fn rm_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Res
     if confirm {
         let client = build_client(ctx, &alias_or_url).await?;
         client.delete_token(&token_name).await?;
-        output!(ctx, "Token '{}' deleted", token_name);
+        if !is_json {
+            output!(ctx, "Token '{}' deleted", token_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     } else {
-        output!(ctx, "Token '{}' not deleted", token_name);
+        if !is_json {
+            output!(ctx, "Token '{}' not deleted", token_name);
+        } else {
+            output!(ctx, "{}", "{}");
+        }
     }
 
     Ok(())
@@ -65,7 +75,10 @@ pub(super) async fn rm_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{context, token};
+    use crate::context::{
+        tests::{context, token, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::ErrorCode;
     use rstest::*;
 
@@ -97,5 +110,32 @@ mod tests {
         let cmd = rm_token_cmd();
         let args = cmd.try_get_matches_from(vec!["rm", "test"]);
         assert_eq!(args.unwrap_err().to_string(), "error: invalid value 'test' for '<TOKEN_PATH>'\n\nFor more information, try '--help'.\n");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_rm_token_json(context: CliContext, #[future] token: String) {
+        let token = token.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let client = build_client(&ctx, "local").await.unwrap();
+        client
+            .create_token(&token, Default::default())
+            .await
+            .unwrap();
+
+        let args = rm_token_cmd().get_matches_from(vec![
+            "rm",
+            format!("local/{}", token).as_str(),
+            "--yes",
+        ]);
+
+        rm_token(&ctx, &args).await.unwrap();
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
     }
 }

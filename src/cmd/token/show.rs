@@ -30,12 +30,16 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
         .unwrap()
         .clone()
         .pair()?;
-
+    let is_json = ctx.json();
     let client = build_client(ctx, &alias_or_url).await?;
     let token = client.get_token(&token_name).await?;
 
     let bool_icon = |value: bool| if value { "✓" } else { "-" };
 
+    if is_json {
+        output!(ctx, "{}", serde_json::to_string(&token).unwrap());
+        return Ok(());
+    }
     output!(ctx, "Token: {}", token_name);
     output!(ctx, "Created: {}", token.created_at.date_naive());
     output!(ctx, "Provisioned: {}", bool_icon(token.is_provisioned));
@@ -85,7 +89,10 @@ pub(super) async fn show_token(ctx: &CliContext, args: &ArgMatches) -> anyhow::R
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::{context, token};
+    use crate::context::{
+        tests::{context, token, MockOutput},
+        ContextBuilder,
+    };
     use reduct_rs::Permissions;
     use rstest::*;
 
@@ -125,5 +132,44 @@ mod tests {
         let cmd = show_token_cmd();
         let args = cmd.try_get_matches_from(vec!["show", "test"]);
         assert_eq!(args.unwrap_err().to_string(), "error: invalid value 'test' for '<TOKEN_PATH>'\n\nFor more information, try '--help'.\n");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_show_token_json(context: CliContext, #[future] token: String) {
+        let token = token.await;
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        let client = build_client(&ctx, "local").await.unwrap();
+        client
+            .create_token(&token, Permissions::default())
+            .await
+            .unwrap();
+
+        let args =
+            show_token_cmd().get_matches_from(vec!["show", format!("local/{}", token).as_str()]);
+
+        show_token(&ctx, &args).await.unwrap();
+
+        let json: serde_json::Value = serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        assert_eq!(json["name"], "test_token");
+        assert!(json["created_at"].as_str().unwrap().len() > 1);
+        assert_eq!(json["value"].as_str().unwrap(), "");
+        assert_eq!(json["is_provisioned"], false);
+        assert_eq!(json["is_expired"], false);
+        assert_eq!(json["ip_allowlist"], serde_json::json!([]));
+        assert_eq!(json["expires_at"], serde_json::Value::Null);
+        assert_eq!(json["ttl"], serde_json::Value::Null);
+        assert_eq!(json["last_access"], serde_json::Value::Null);
+
+        assert_eq!(json["permissions"]["full_access"], false);
+        assert_eq!(json["permissions"]["read"], serde_json::json!([]));
+        assert_eq!(json["permissions"]["write"], serde_json::json!([]));
     }
 }

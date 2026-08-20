@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `--json` flag to `bucket ls`, `bucket show`, `bucket create`, `bucket update`, `bucket rename` and `bucket rm` command, [PR-274](https://github.com/reductstore/reduct-cli/pull/274) by @vbmade2000
 - Add lifecycle processing interval support to create, update, and show commands, [PR-276](https://github.com/reductstore/reduct-cli/pull/276) by @atimin
 - Add `--json` flag to `rm` command, [PR-277](https://github.com/reductstore/reduct-cli/pull/277) by @vbmade2000
+- Add `--json` flag to `token` command, [PR-283](https://github.com/reductstore/reduct-cli/pull/283) by @vbmade2000
 
 ### Changed
 
