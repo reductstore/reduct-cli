@@ -28,6 +28,11 @@ pub(super) async fn get_server_status(
     let client = build_client(ctx, alias).await?;
     let info = client.server_info().await?;
 
+    if ctx.json() {
+        output!(ctx, "{}", serde_json::to_string(&info).unwrap());
+        return Ok(());
+    }
+
     output!(ctx, "Status: \tOk ✅");
     output!(ctx, "Version:\t{}", info.version);
     output!(
@@ -52,7 +57,10 @@ pub(super) async fn get_server_status(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::context;
+    use crate::context::{
+        tests::{context, MockOutput},
+        ContextBuilder,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -68,5 +76,45 @@ mod tests {
             context.stdout().history()[3],
             "License:\tBUSL-1.1 (Limited commercial use)"
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_server_status_json(context: crate::context::CliContext) {
+        let args = server_status_cmd().get_matches_from(vec!["status", "local"]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        get_server_status(&ctx, &args).await.unwrap();
+
+        let status_json: serde_json::Value =
+            serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+
+        // Verify top level keys
+        let main_object = status_json.as_object().unwrap();
+        assert!(main_object.contains_key("version"));
+        assert!(main_object.contains_key("instance_name"));
+        assert!(main_object.contains_key("instance_role"));
+        assert!(main_object.contains_key("bucket_count"));
+        assert!(main_object.contains_key("usage"));
+        assert!(main_object.contains_key("uptime"));
+        assert!(main_object.contains_key("oldest_record"));
+        assert!(main_object.contains_key("latest_record"));
+        assert!(main_object.contains_key("license"));
+
+        // Verify "defaults" keys
+        let default_object = main_object["defaults"].as_object().unwrap();
+        assert!(default_object.contains_key("bucket"));
+
+        // Verify "bucket" key
+        let bucket_object = default_object["bucket"].as_object().unwrap();
+        assert!(bucket_object.contains_key("quota_type"));
+        assert!(bucket_object.contains_key("quota_size"));
+        assert!(bucket_object.contains_key("max_block_size"));
+        assert!(bucket_object.contains_key("max_block_records"));
     }
 }
