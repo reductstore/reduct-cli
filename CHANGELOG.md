@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Report the open-source server license as Apache-2.0 in `server status` and `server license` output.
+- Report the open-source server license as Apache-2.0 in `server status` and `server license` output, [PR-286](https://github.com/reductstore/reduct-cli/pull/286) by @TLNing260310
 
 ## 0.12.2 - 2026-06-18
 
