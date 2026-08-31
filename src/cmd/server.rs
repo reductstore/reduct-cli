@@ -10,6 +10,8 @@ mod status;
 use crate::context::CliContext;
 use clap::Command;
 
+const OPEN_SOURCE_LICENSE: &str = "Apache-2.0";
+
 pub(crate) fn server_cmd() -> Command {
     Command::new("server")
         .about("Get general information an instance")

@@ -49,7 +49,7 @@ pub(super) async fn get_server_status(
             license.expiry_date
         );
     } else {
-        output!(ctx, "License:\tBUSL-1.1 (Limited commercial use)");
+        output!(ctx, "License:\t{}", super::OPEN_SOURCE_LICENSE);
     }
     Ok(())
 }
@@ -72,10 +72,7 @@ mod tests {
         assert_eq!(context.stdout().history()[0], "Status: \tOk ✅");
         assert!(context.stdout().history()[1].starts_with("Version:\t1."));
         assert!(context.stdout().history()[2].starts_with("Uptime: \t"));
-        assert_eq!(
-            context.stdout().history()[3],
-            "License:\tBUSL-1.1 (Limited commercial use)"
-        );
+        assert_eq!(context.stdout().history()[3], "License:\tApache-2.0");
     }
 
     #[rstest]
