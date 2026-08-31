@@ -24,6 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pin the repo Rust toolchain to `1.91.0`, require locked Cargo resolution in CI/pre-commit/install examples/publish flows, and replace the tag-version `cargo-get` install step with repo-local `cargo metadata` verification.
 - Align replica commands with API v1.21 by removing the deprecated `--each-s` option.
 
+### Fixed
+
+- Report the open-source server license as Apache-2.0 in `server status` and `server license` output.
+
 ## 0.12.2 - 2026-06-18
 
 ### Fixed

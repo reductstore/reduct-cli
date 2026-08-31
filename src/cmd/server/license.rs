@@ -41,14 +41,11 @@ pub(super) async fn get_server_license(
     } else {
         if is_json {
             let license_json = serde_json::json!({
-                "license": "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
+                "license": super::OPEN_SOURCE_LICENSE
             });
             output!(ctx, "{}", serde_json::to_string(&license_json).unwrap());
         } else {
-            output!(
-            ctx,
-            "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
-        );
+            output!(ctx, "{}", super::OPEN_SOURCE_LICENSE);
         }
     }
 
@@ -70,7 +67,7 @@ mod tests {
         let matches = server_license_cmd().get_matches_from(vec!["license", "local"]);
         get_server_license(&context, &matches).await.unwrap();
 
-        assert_eq!(context.stdout().history(), ["BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"]);
+        assert_eq!(context.stdout().history(), ["Apache-2.0"]);
     }
 
     #[rstest]
@@ -89,9 +86,6 @@ mod tests {
         let license_json: serde_json::Value =
             serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
 
-        assert_eq!(
-            license_json["license"],
-            "BUSL-1.1 (Limited commercial use. See https://www.reduct.store/pricing for details)"
-        );
+        assert_eq!(license_json["license"], "Apache-2.0");
     }
 }
