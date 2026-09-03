@@ -5,6 +5,7 @@
 
 use crate::config::{Alias, ConfigFile};
 use crate::context::{CliContext, DEFAULT_PARALLEL, DEFAULT_TIMEOUT_SECS};
+use crate::io::std::output;
 use anyhow::Error;
 use clap::{arg, Arg, ArgMatches, Command};
 use url::Url;
@@ -13,6 +14,7 @@ pub(super) fn add_alias(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<(
     let name = args.get_one::<String>("NAME").unwrap();
     let url = args.get_one::<String>("URL").unwrap();
     let token = args.get_one("TOKEN");
+    let is_json = ctx.json();
 
     let mut config_file = ConfigFile::load(ctx.config_path())?;
     let config = config_file.mut_config();
@@ -35,6 +37,11 @@ pub(super) fn add_alias(ctx: &CliContext, args: &ArgMatches) -> anyhow::Result<(
         },
     );
     config_file.save()?;
+    if is_json {
+        let config = config_file.config();
+        let alias = config.aliases.get(name).unwrap();
+        output!(ctx, "{}", serde_json::to_string(alias)?);
+    }
     Ok(())
 }
 
@@ -61,7 +68,7 @@ pub(super) fn add_alias_cmd() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::context;
+    use crate::context::tests::{context, MockOutput};
     use crate::context::ContextBuilder;
     use crate::io::std::Output;
     use rstest::rstest;
@@ -168,5 +175,37 @@ mod tests {
         assert_eq!(alias.timeout, 15);
         assert_eq!(alias.parallel, DEFAULT_PARALLEL + 1);
         assert_eq!(alias.ca_cert, Some("/tmp/custom-ca.pem".to_string()));
+    }
+
+    #[rstest]
+    fn test_add_alias_json(context: CliContext) {
+        let args = add_alias_cmd().get_matches_from(vec![
+            "add",
+            "test",
+            "-L",
+            "https://test.reduct.store",
+            "-t",
+            "test_token",
+        ]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        add_alias(&ctx, &args).unwrap();
+
+        let alias_json: serde_json::Value =
+            serde_json::from_str(&ctx.stdout().history()[0]).unwrap();
+        assert_eq!(
+            alias_json["url"],
+            serde_json::json!("https://test.reduct.store/")
+        );
+        assert_eq!(alias_json["token"], serde_json::json!("test_token"));
+        assert_eq!(alias_json["ignore_ssl"], false);
+        assert_eq!(alias_json["timeout"], 30);
+        assert_eq!(alias_json["parallel"], 10);
+        assert_eq!(alias_json["ca_cert"], serde_json::Value::Null);
     }
 }
