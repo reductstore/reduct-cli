@@ -3,8 +3,8 @@
 //    License, v. 2.0. If a copy of the MPL was not distributed with this
 //    file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-use crate::config::ConfigFile;
 use crate::context::CliContext;
+use crate::{config::ConfigFile, io::std::output};
 use anyhow::Error;
 use clap::{arg, ArgMatches, Command};
 
@@ -19,6 +19,11 @@ pub(super) fn remove_alias(ctx: &CliContext, args: &ArgMatches) -> anyhow::Resul
 
     config.aliases.remove(name);
     config_file.save()?;
+
+    if ctx.json() {
+        output!(ctx, "{}", "{}");
+    }
+
     Ok(())
 }
 
@@ -31,7 +36,10 @@ pub(super) fn rm_alias_cmd() -> Command {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::context::tests::context;
+    use crate::context::{
+        tests::{context, MockOutput},
+        ContextBuilder,
+    };
     use rstest::rstest;
 
     #[rstest]
@@ -53,5 +61,24 @@ mod tests {
             result.err().unwrap().to_string(),
             "Alias 'test' does not exist"
         );
+    }
+
+    #[rstest]
+    fn test_remove_alias_json(context: CliContext) {
+        let args = rm_alias_cmd().get_matches_from(vec!["rm", "default"]);
+
+        let ctx = ContextBuilder::new()
+            .config_path(context.config_path())
+            .json(Some(true))
+            .output(Box::new(MockOutput::new()))
+            .build();
+
+        remove_alias(&ctx, &args).unwrap();
+
+        assert_eq!(ctx.stdout().history(), vec!["{}"]);
+
+        // let config_file = ConfigFile::load(context.config_path()).unwrap();
+        // let config = config_file.config();
+        // assert!(!config.aliases.contains_key("default"));
     }
 }
