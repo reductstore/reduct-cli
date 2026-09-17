@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 0.13.0 - 2026-09-17
+
 ### Added
 
 - Add destination prefixes to replica create, update, and show commands, [PR-247](https://github.com/reductstore/reduct-cli/pull/247) by @ychampion
